@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { EMERALD, loadMapEvents, loadSprite, renderLayout } from "./emerald";
 import type { Io, MapEvents, RenderedMap } from "./emerald";
-import { buildCamp } from "./camp";
 import { buildChamber, buildClearing, buildHall } from "./spireMaps";
 
 /** Browser side: fetch from GitHub (HTTP-cached), inflate with the native stream. */
@@ -44,7 +43,6 @@ const maps = new Map<string, Promise<WorldMap>>();
 
 /** Maps built by the game rather than read as they are. */
 const BUILT: Record<string, (io: Io) => Promise<RenderedMap>> = {
-  camp: buildCamp,
   "hall-1": (io) => buildHall(io, 1),
   "hall-2": (io) => buildHall(io, 2),
   "hall-3": (io) => buildHall(io, 3),

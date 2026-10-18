@@ -107,7 +107,7 @@ const EmeraldWalker = memo(function EmeraldWalker({ pic, dir, step, T }: { pic: 
 /** A standing character, feet on its cell: B2W2 frames are 32×32 (two cells), Emerald 16×32. */
 export function Standing({ look, T }: { look: Look; T: number }) {
   if ("od" in look) {
-    return <img src={look.od} alt="" draggable={false} className="pixel absolute max-w-none" style={{ left: -T / 2, top: -T, width: T * 2, height: T * 2, imageRendering: "pixelated" }} />;
+    return <img src={look.od} alt="" draggable={false} className="pixel absolute max-w-none" style={{ left: -T / 2, top: -T, width: T * 2, height: T * 2, objectFit: "contain", objectPosition: "bottom", imageRendering: "pixelated" }} />;
   }
   return (
     <div className="absolute left-0" style={{ top: -T }}>

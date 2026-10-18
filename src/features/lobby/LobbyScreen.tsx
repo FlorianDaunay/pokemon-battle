@@ -7,7 +7,6 @@ import { LAST_MAIN_FLOOR } from "@/core/spire/themes";
 import { themeForFloor, floorLevel } from "@/core/spire/floor";
 import { useT } from "@/i18n";
 import { themeName } from "@/core/spire/themes";
-import { Particles } from "@/fx/Particles";
 import { Icon } from "@/ui/Icon";
 import { HpBar, PokemonSprite } from "@/ui/sprites";
 import { Modal, MoneyChip } from "@/ui/layout";
@@ -19,12 +18,11 @@ import type { WorldEntity } from "@/features/world/World";
 import { Marker, Person } from "@/features/world/props";
 import { lookOf, playerPic } from "@/features/world/Walker";
 import { useWorldMap } from "@/features/world/useEmerald";
-import { CAMP } from "@/features/world/camp";
+import { CAMP, CAMP_MAP } from "@/features/world/camp";
 import { WorldLoading } from "@/features/world/WorldLoading";
 import { useTouchControls } from "@/features/world/Pad";
 
-// The camp: the Spire (Battle Tower) at the top of the avenue, services on either side.
-const SPAWN = { ...CAMP.spawn, dir: "down" as const };
+const SPAWN = { ...CAMP.spawn, dir: "up" as const };
 
 export function LobbyScreen() {
   const t = useT();
@@ -49,33 +47,40 @@ export function LobbyScreen() {
 
   const station = (id: Exclude<Overlay, null>) => () => {
     sfx("select");
-    // The Pokémon Center looks after the team before opening the boxes.
-    if (id === "pc" && save.party.some((p) => p.hp < maxHp(p) || p.status || p.moves.some((m) => m.pp < maxPp(m)))) {
-      jingles.heal();
-      update((d) => healParty(d));
-      toast("lobby.healed", undefined, "heart");
-    }
     open(id);
   };
 
-  const { map, error, retry } = useWorldMap("camp");
+  // The nurse looks after the team, as in any Pokémon Center.
+  const nurse = () => {
+    if (save.party.some((p) => p.hp < maxHp(p) || p.status || p.moves.some((m) => m.pp < maxPp(m)))) {
+      jingles.heal();
+      update((d) => healParty(d));
+      toast("lobby.healed", undefined, "heart");
+    } else toast("lobby.allHealthy", undefined, "heart");
+  };
+
+  const { map, error, retry } = useWorldMap(CAMP_MAP);
   const entities = useMemo<WorldEntity[]>(() => {
-    const door = (id: Exclude<Overlay, null>, at: { x: number; y: number }, label: string, badge?: number): WorldEntity => ({ id, ...at, onUse: station(id), render: (T) => <Marker T={T} label={label} badge={badge} /> });
+    const person = (id: string, look: string, at: { x: number; y: number; h?: number }, label: string, onUse: () => void, badge?: number): WorldEntity => ({
+      id, ...at, onUse, render: (T, near) => <Person T={T} look={lookOf(look)} label={near ? label : undefined} badge={badge || undefined} />,
+    });
     return [
-      { id: "spire", ...CAMP.door, onUse: () => (floors.length > 1 ? setPicking(true) : enter(floors[0])), render: (T) => <Marker T={T} label={t("lobby.spire")} color="#ffd779" glow="rgba(255,215,120,0.6)" /> },
-      door("tutor", CAMP.tutor, t("lobby.tutor")),
-      door("dojo", CAMP.dojo, t("lobby.dojo")),
-      door("pc", CAMP.pc, t("lobby.pc")),
-      door("mart", CAMP.mart, t("lobby.mart")),
-      door("quests", CAMP.quests, t("lobby.quests"), ready || undefined),
-      door("trophies", CAMP.trophies, t("lobby.trophies")),
-      { id: "forms", ...CAMP.forms, onUse: station("forms"), render: (T) => <Person T={T} look={lookOf("formchanger")} label={t("lobby.forms")} /> },
-      { id: "journal", ...CAMP.journal, onUse: station("journal"), render: (T) => <Person T={T} look={lookOf("professor")} label={t("lobby.journal")} /> },
+      { id: "spire", ...CAMP.door, onUse: () => (floors.length > 1 ? setPicking(true) : enter(floors[0])), render: (T) => <Marker T={T} label={t("lobby.spire")} color="#ffd779" glow="rgba(255,215,120,0.55)" top={0.9} /> },
+      // Counters: talk across them.
+      person("nurse", "nurse", CAMP.nurse, t("lobby.nurse"), nurse),
+      person("clerk", "clerk", CAMP.clerk, t("lobby.mart"), station("mart")),
+      { id: "pc", ...CAMP.pc, onUse: station("pc"), render: (T, near) => (near ? <Marker T={T} label={t("lobby.pc")} top={-0.3} /> : null) },
+      person("trophies", "curator", CAMP.trophies, t("lobby.trophies"), station("trophies")),
+      person("journal", "professor", CAMP.journal, t("lobby.journal"), station("journal")),
+      person("tutor", "tutor", CAMP.tutor, t("lobby.tutor"), station("tutor")),
+      person("dojo", "blackbelt", CAMP.dojo, t("lobby.dojo"), station("dojo")),
+      person("quests", "guide", CAMP.quests, t("lobby.quests"), station("quests"), ready),
+      person("forms", "formchanger", CAMP.forms, t("lobby.forms"), station("forms")),
     ];
-  }, [t, ready, floors.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [t, ready, floors.length, save.party]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="absolute inset-0 bg-[#2a2420]">
+    <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 40%, #2a3354 0%, #121628 70%, #0a0c18 100%)" }}>
       {map ? (
         <World
           mapKey="camp"
@@ -85,11 +90,11 @@ export function LobbyScreen() {
           pic={playerPic(save.avatar)}
           follower={lead ? { species: lead.species, shiny: lead.shiny } : undefined}
           paused={!!overlay || picking}
+          padTop={touch ? 96 : 110}
         />
       ) : (
         <WorldLoading error={error} onRetry={retry} />
       )}
-      <Particles ambient="dust" density={0.5} />
 
       <div className="pointer-events-none absolute inset-x-0 top-0 safe-pad">
         <header className="pointer-events-auto flex items-center gap-2">

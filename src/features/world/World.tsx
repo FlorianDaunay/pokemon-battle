@@ -29,7 +29,8 @@ export interface WorldEntity {
   /** Tapping it walks up to it (and faces it) rather than stepping in: doors with something behind. */
   approach?: boolean;
   onUse?: () => void;
-  render?: (tile: number) => ReactNode;
+  /** `near`: the player stands within two cells (to show names only then). */
+  render?: (tile: number, near: boolean) => ReactNode;
   /** Drawn over the player (roofs, tree tops). */
   above?: boolean;
   /** Scenery only: never blocks or triggers (the tiles underneath decide). */
@@ -53,6 +54,8 @@ export interface WorldProps {
   onFocus?: (id: string | null) => void;
   /** After each step. */
   onStep?: (at: Cell) => void;
+  /** Screen space kept free at the top (a header), in pixels. */
+  padTop?: number;
   children?: ReactNode;
 }
 
@@ -67,7 +70,7 @@ const KEYS: Record<string, Dir> = {
 const inside = (e: WorldEntity, x: number, y: number) => x >= e.x && x < e.x + (e.w ?? 1) && y >= e.y && y < e.y + (e.h ?? 1);
 const dirTo = (from: Cell, to: Cell): Dir => (to.x > from.x ? "right" : to.x < from.x ? "left" : to.y > from.y ? "down" : "up");
 
-export function World({ mapKey, map, entities, spawn, pic, follower, filter, paused, onFocus, onStep, children }: WorldProps) {
+export function World({ mapKey, map, entities, spawn, pic, follower, filter, paused, onFocus, onStep, padTop = 0, children }: WorldProps) {
   const H = map.height;
   const W = map.width;
   const touch = useTouchControls();
@@ -318,7 +321,12 @@ export function World({ mapKey, map, entities, spawn, pic, follower, filter, pau
   // Camera: follow the player, clamped to the map (centred when it fits).
   const cam = (size: number, map: number, at: number) => (map <= size ? (size - map) / 2 : Math.min(0, Math.max(size - map, size / 2 - (at + 0.5) * T)));
   const ox = cam(view.w, W * T, pos.x);
-  const oy = cam(view.h, H * T, pos.y);
+  const oy = padTop + cam(view.h - padTop, H * T, pos.y);
+  const near = (e: WorldEntity) => {
+    const dx = Math.max(e.x - pos.x, 0, pos.x - (e.x + (e.w ?? 1) - 1));
+    const dy = Math.max(e.y - pos.y, 0, pos.y - (e.y + (e.h ?? 1) - 1));
+    return Math.max(dx, dy) <= 2;
+  };
   const moveDir = dirTo(trail, pos);
   const glide: CSSProperties = { transition: `left ${STEP_MS}ms linear, top ${STEP_MS}ms linear` };
 
@@ -328,7 +336,7 @@ export function World({ mapKey, map, entities, spawn, pic, follower, filter, pau
         <img src={map.below} alt="" draggable={false} className="pixel absolute left-0 top-0 max-w-none" style={{ width: W * T, height: H * T, imageRendering: "pixelated", filter }} />
         {entities.filter((e) => !e.above).map((e) => (
           <div key={e.id} className="absolute" style={{ left: e.x * T, top: e.y * T, width: (e.w ?? 1) * T, height: (e.h ?? 1) * T, zIndex: (e.y + (e.h ?? 1)) * 10 }}>
-            {e.render?.(T)}
+            {e.render?.(T, near(e))}
           </div>
         ))}
         {follower && (trail.x !== pos.x || trail.y !== pos.y) && (
@@ -342,7 +350,7 @@ export function World({ mapKey, map, entities, spawn, pic, follower, filter, pau
         <img src={map.above} alt="" draggable={false} className="pixel pointer-events-none absolute left-0 top-0 max-w-none" style={{ width: W * T, height: H * T, imageRendering: "pixelated", zIndex: 800, filter }} />
         {entities.filter((e) => e.above).map((e) => (
           <div key={e.id} className="pointer-events-none absolute" style={{ left: e.x * T, top: e.y * T, width: (e.w ?? 1) * T, height: (e.h ?? 1) * T, zIndex: 900 }}>
-            {e.render?.(T)}
+            {e.render?.(T, near(e))}
           </div>
         ))}
       </div>
