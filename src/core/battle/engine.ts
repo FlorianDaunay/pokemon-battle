@@ -255,6 +255,15 @@ export class BattleController {
       side.choice.forcedSwitchesLeft = switches;
       side.choice.forcedPassesLeft = passes;
     };
+    // Without this, Showdown keeps asking to refill a spot only the partner's bench could fill.
+    const sim = this.battle as unknown as { possibleSwitches: (s: unknown) => Pokemon[] };
+    const possible = sim.possibleSwitches.bind(this.battle);
+    sim.possibleSwitches = (s) => {
+      const list = possible(s);
+      if (s !== side) return list;
+      const spots = side.active.filter((m) => m?.switchFlag).map((m) => m.position);
+      return spots.length ? list.filter((p) => spots.includes(owners[BattleController.indexOf(p)])) : list;
+    };
   }
 
   /** Events produced since the last call (start of battle on the first call). */
@@ -411,6 +420,21 @@ export class BattleController {
 
   chooseSwitch(partyIndex: number): BattleEvent[] {
     return this.submit([{ kind: "switch", slot: partyIndex }]);
+  }
+
+  /**
+   * Safety net: if the sim waits on the opponent and nothing is asked of the player, let the
+   * opponent's default choices through so the battle moves on.
+   */
+  unstick(): BattleEvent[] {
+    let guard = 0;
+    while (!this.battle.ended && !this.battle.p1.requestState && this.battle.p2.requestState && guard++ < 10) {
+      const side = this.battle.p2;
+      side.clearChoice();
+      if (!side.autoChoose()) side.choosePass();
+      if (this.battle.allChoicesDone()) this.battle.commitChoices();
+    }
+    return this.drain();
   }
 
   /** Spends the (single) player's turn doing nothing in the sim, after a bag action. */

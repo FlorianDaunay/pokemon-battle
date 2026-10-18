@@ -178,6 +178,7 @@ function BattleView({ room, floor, tr, partner, owners, foe, party, ctrl, theme 
   /** Choices made so far this turn, and the events of bag items already used. */
   const actions = useRef<SlotAction[]>([]);
   const preEvents = useRef<BattleEvent[]>([]);
+  const unstuck = useRef(0);
 
   useEffect(() => {
     alive.current = true;
@@ -442,6 +443,12 @@ function BattleView({ room, floor, tr, partner, owners, foe, party, ctrl, theme 
       return;
     }
     const r = ctrl.request();
+    // Never leave the player waiting on nothing (see BattleController.unstick).
+    if (r.kind === "wait" && unstuck.current++ < 3) {
+      void play(ctrl.unstick());
+      return;
+    }
+    unstuck.current = 0;
     setRequest(r);
     actions.current = [];
     preEvents.current = [];

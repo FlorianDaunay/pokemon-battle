@@ -162,4 +162,31 @@ describe("double battles", () => {
     const ctrl = new BattleController({ kind: "trainer", player, foe: team(["geodude", "onix"], 20, 2), ai: "basic", seed: 5, ball, double: true });
     expect(ctrl.slots).toBe(1);
   });
+
+  it("never stalls in tag battles once one trainer runs out", () => {
+    for (let seed = 1; seed <= 120; seed++) {
+      const rng = new Rng(seed);
+      const pool = ["geodude", "zubat", "machop", "oddish", "psyduck", "growlithe", "abra", "tentacool", "magnemite", "gastly"];
+      const mk = (n: number) => Array.from({ length: n }, () => createPokemon({ species: rng.pick(pool), level: 40, rng }));
+      const foe = mk(rng.int(4, 6));
+      const owners = foe.map((_, i) => (i < 2 ? i : rng.int(0, 1)));
+      const ctrl = new BattleController({ kind: "trainer", player: mk(3), foe, ai: "smart", seed, ball, double: true, foeOwners: owners });
+      ctrl.drain();
+      let guard = 0;
+      while (!ctrl.outcome && guard++ < 300) {
+        const req = ctrl.request();
+        expect(req.kind, `seed ${seed}`).not.toBe("wait");
+        if (req.kind === "switch") {
+          const left = [...req.switchable];
+          ctrl.submit(req.replace.map(() => (left.length ? { kind: "switch" as const, slot: left.shift()! } : { kind: "pass" as const })));
+        } else {
+          const foeLoc = ctrl.battle.p2.active.map((m) => !!m && !m.fainted).lastIndexOf(true) + 1;
+          ctrl.submit(req.slots.map((sl) => {
+            const m = sl.moves.find((x) => !x.disabled && (x.pp > 0 || sl.locked || sl.struggle)) ?? sl.moves[0];
+            return { kind: "move" as const, index: m.index, target: !sl.locked && needsTarget(m.target) ? foeLoc || 1 : undefined };
+          }));
+        }
+      }
+    }
+  });
 });
