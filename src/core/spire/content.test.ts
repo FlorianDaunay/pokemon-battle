@@ -3,8 +3,8 @@ import { PLAYABLE_SPECIES, dex, stageForLevel } from "../dex";
 import { ITEMS } from "../items";
 import { THEMES, MAIN_FLOORS, themeById } from "./themes";
 import { TRAINERS, trainer } from "./trainers";
-import { buildTrainerTeam } from "./teams";
-import { floorLevel, generateFloor, BASE_SHINY_RATE } from "./floor";
+import { buildRoomTeam, buildTrainerTeam } from "./teams";
+import { floorLevel, generateFloor, BASE_SHINY_RATE, DOUBLE_FROM, TAG_FROM } from "./floor";
 
 describe("content", () => {
   it("only uses Gen 1–5 species that exist", () => {
@@ -53,5 +53,27 @@ describe("content", () => {
         for (const p of team) expect(p.moves.length, `${t.id} ${p.species} f${f}`).toBeGreaterThan(0);
       }
     }
+  });
+
+  it("adds double and tag battles from their floors on", () => {
+    const ctx = { shinyRate: 0, caughtLegends: [] };
+    const rooms = (from: number, to: number) => {
+      const out = [];
+      for (let n = from; n <= to; n++) for (let seed = 1; seed <= 20; seed++) out.push(...generateFloor(n, seed, ctx).steps.flat());
+      return out;
+    };
+    expect(rooms(1, DOUBLE_FROM - 1).some((r) => r.double && r.trainer !== "tateandliza")).toBe(false);
+    const later = rooms(TAG_FROM, TAG_FROM + 10);
+    expect(later.some((r) => r.double && !r.partner)).toBe(true);
+    expect(later.some((r) => r.partner && r.partner !== r.trainer)).toBe(true);
+    expect(rooms(1, 40).filter((r) => r.trainer === "tateandliza").every((r) => r.double)).toBe(true);
+  });
+
+  it("builds tag teams with each trainer's lead up front", () => {
+    const { foe, owners } = buildRoomTeam({ kind: "trainer", trainer: "brock", partner: "misty", double: true, level: 30, seed: 5 }, 12, 0);
+    expect(owners).toHaveLength(foe.length);
+    expect(owners!.slice(0, 2)).toEqual([0, 1]);
+    expect(owners!.filter((o) => o === 0).length).toBeGreaterThanOrEqual(2);
+    expect(owners!.filter((o) => o === 1).length).toBeGreaterThanOrEqual(2);
   });
 });

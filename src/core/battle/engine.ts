@@ -6,7 +6,7 @@ import type { BallContext } from "../items";
 import { maxHp, maxPp } from "../pokemon";
 import type { OwnedPokemon, StatusId } from "../pokemon";
 import { Rng } from "../rng";
-import { chooseAction, chooseSwitch } from "./ai";
+import { chooseActions, chooseSwitches } from "./ai";
 import type { AiLevel } from "./ai";
 import { rollCatch, rollRun } from "./catch";
 import { parseLines, visibleLines } from "./protocol";
@@ -50,6 +50,13 @@ export interface BattleOptions {
   ball: Omit<BallContext, "turn" | "foeLevel" | "foeTypes">;
   /** Catch-rate multiplier (key items). */
   catchBonus?: number;
+  /** Two Pokémon a side. */
+  double?: boolean;
+  /**
+   * Tag battles: which trainer (0 or 1) owns each foe. Trainer 0 holds the left spot, trainer 1
+   * the right one, and each only ever sends out their own Pokémon. Each one's ace is their last.
+   */
+  foeOwners?: number[];
 }
 
 export type Outcome = "win" | "lose" | "caught" | "fled" | null;
@@ -60,18 +67,52 @@ export interface MoveOption {
   pp: number;
   maxpp: number;
   disabled: boolean;
+  /** Showdown target type ("normal", "allAdjacentFoes", "self"…). */
+  target: string;
+}
+
+/** What one of the player's active Pokémon can do this turn. */
+export interface SlotRequest {
+  /** Field position (0 left, 1 right). */
+  pos: number;
+  /** Party index of the Pokémon there. */
+  slot: number;
+  moves: MoveOption[];
+  trapped: boolean;
+  /** Must Struggle (no PP / all disabled). */
+  struggle: boolean;
+  /** Locked into a move (Outrage, recharge, second turn of a charge move): it plays itself. */
+  locked: boolean;
+  /** Can spend its turn on the bag (Choice-locked or Encored turns can't spare a move slot). */
+  canBag: boolean;
 }
 
 export interface PlayerRequest {
   kind: "move" | "switch" | "wait";
-  moves: MoveOption[];
+  /** Move requests: one entry per active Pokémon that must act, left to right. */
+  slots: SlotRequest[];
+  /** Switch requests: field positions that need a replacement, left to right. */
+  replace: number[];
   /** Party indexes that can be switched in. */
   switchable: number[];
+  // The first slot's request, for single battles.
+  moves: MoveOption[];
   trapped: boolean;
-  /** Must Struggle (no PP / all disabled). */
   struggle: boolean;
-  /** Locked into a move (Outrage, recharge, second turn of a charge move): the turn plays itself. */
   locked: boolean;
+}
+
+/** One active Pokémon's choice for the turn. */
+export type SlotAction =
+  | { kind: "move"; index: number; /** Showdown target location: foes 1, 2; own side -1, -2. */ target?: number }
+  | { kind: "switch"; slot: number }
+  | { kind: "bag" }
+  | { kind: "pass" };
+
+const CHOOSABLE_TARGETS = new Set(["normal", "any", "adjacentAlly", "adjacentAllyOrSelf", "adjacentFoe"]);
+/** Whether a move needs a chosen target in doubles. */
+export function needsTarget(target: string): boolean {
+  return CHOOSABLE_TARGETS.has(target);
 }
 
 const slotName = (i: number) => `S${i}`;
@@ -140,26 +181,32 @@ export class BattleController {
   /** Foe indexes each player member faced (gen 5 splits exp between participants). */
   readonly faced = new Map<number, Set<number>>();
   turn = 1;
-  private aceName: string;
+  private aces: Set<string>;
+  /** Foe owners when the tag rules apply (double battles only). */
+  private owners: number[] | undefined;
 
   constructor(opts: BattleOptions) {
     installBagAction();
     this.opts = opts;
     this.rng = new Rng(opts.seed ^ 0x5bd1e995);
     const seed = `${opts.seed & 0xffff},${(opts.seed >>> 16) & 0xffff},4660,39030` as const;
-    this.battle = new Battle({ formatid: "gen5customgame@@@!teampreview" as never, seed });
+    // A double needs two healthy Pokémon on each side; otherwise it's played as a single.
+    const double = !!opts.double && opts.player.filter((p) => p.hp > 0).length >= 2 && opts.foe.length >= 2;
+    this.owners = double ? opts.foeOwners : undefined;
+    const format = double ? "gen5doublescustomgame" : "gen5customgame";
+    this.battle = new Battle({ formatid: `${format}@@@!teampreview` as never, seed });
 
-    // The first healthy member leads; names keep the original party index.
+    // Healthy members lead, in party order; names keep the original party index.
     const order = opts.player.map((p, i) => ({ p, i }));
-    const lead = order.findIndex(({ p }) => p.hp > 0);
-    if (lead > 0) order.unshift(...order.splice(lead, 1));
+    order.sort((a, b) => Number(b.p.hp > 0) - Number(a.p.hp > 0) || a.i - b.i);
     this.battle.setPlayer("p1", { name: "Player", team: Teams.pack(order.map(({ p, i }) => toSet(p, i))) });
     this.battle.p1.pokemon.forEach((mon) => {
       const idx = Number(mon.set.name.slice(1));
       applyStoredState(mon, opts.player[idx]);
     });
 
-    this.aceName = slotName(opts.foe.length - 1);
+    const owners = opts.foeOwners ?? opts.foe.map(() => 0);
+    this.aces = new Set([...new Set(owners)].map((o) => slotName(owners.lastIndexOf(o))));
     this.cursor = this.battle.log.length;
     this.battle.setPlayer("p2", { name: "Foe", team: Teams.pack(opts.foe.map(toSet)) });
     for (const mon of this.battle.p2.pokemon) syncPp(mon, opts.foe[BattleController.indexOf(mon)]);
@@ -172,12 +219,42 @@ export class BattleController {
       }
     }
     this.battle.p1.pokemonLeft = this.battle.p1.pokemon.filter((m) => !m.fainted).length;
+    if (this.owners) this.keepTeamsApart(this.owners);
     this.markActive();
 
     if (opts.weather && !this.battle.field.weather) {
       this.battle.field.setWeather(opts.weather, this.battle.p2.active[0]);
       this.battle.field.weatherState.duration = 0; // environment weather lasts all battle
     }
+  }
+
+  /** Pokémon a side on the field (1 or 2). */
+  get slots(): number {
+    return this.battle.p1.active.length;
+  }
+
+  /**
+   * Showdown makes a side refill an empty spot from any benched member. In a tag battle, a
+   * trainer who has run out leaves their spot empty instead: replacements only count the bench
+   * of the spot's owner, so the AI may pass.
+   */
+  private keepTeamsApart(owners: number[]) {
+    const side = this.battle.p2;
+    const clear = side.clearChoice.bind(side);
+    side.clearChoice = () => {
+      clear();
+      if (this.battle.requestState !== "switch") return;
+      let switches = 0;
+      let passes = 0;
+      for (const mon of side.active) {
+        if (!mon?.switchFlag) continue;
+        const bench = side.pokemon.some((p) => !p.isActive && !p.fainted && owners[BattleController.indexOf(p)] === mon.position);
+        if (bench) switches++;
+        else passes++;
+      }
+      side.choice.forcedSwitchesLeft = switches;
+      side.choice.forcedPassesLeft = passes;
+    };
   }
 
   /** Events produced since the last call (start of battle on the first call). */
@@ -198,15 +275,16 @@ export class BattleController {
   }
 
   private markActive() {
-    const me = this.battle.p1.active[0];
-    const foe = this.battle.p2.active[0];
-    if (!me) return;
-    const mi = Number(me.set.name.slice(1));
-    this.participants.add(mi);
-    if (foe && !me.fainted) {
-      const fi = Number(foe.set.name.slice(1));
-      if (!this.faced.has(fi)) this.faced.set(fi, new Set());
-      this.faced.get(fi)!.add(mi);
+    for (const me of this.battle.p1.active) {
+      if (!me || me.fainted) continue;
+      const mi = BattleController.indexOf(me);
+      this.participants.add(mi);
+      for (const foe of this.battle.p2.active) {
+        if (!foe || foe.fainted) continue;
+        const fi = BattleController.indexOf(foe);
+        if (!this.faced.has(fi)) this.faced.set(fi, new Set());
+        this.faced.get(fi)!.add(mi);
+      }
     }
   }
 
@@ -234,28 +312,44 @@ export class BattleController {
     const side = this.battle.p1;
     const state = side.requestState;
     const switchable = side.pokemon.filter((m) => !m.isActive && !m.fainted && m.hp > 0).map((m) => BattleController.indexOf(m));
-    if (state === "switch") return { kind: "switch", moves: [], switchable, trapped: false, struggle: false, locked: false };
-    if (state !== "move") return { kind: "wait", moves: [], switchable, trapped: false, struggle: false, locked: false };
-    const active = side.active[0];
-    const data = active.getMoveRequestData();
-    const moves: MoveOption[] = [];
-    // Showdown sends a locked move without PP.
-    const locked = data.moves.length === 1 && !("pp" in data.moves[0]) && data.moves[0].id !== "struggle";
-    data.moves.forEach((m, i) => {
-      if (m.id === BAG_ACTION) return;
-      const anyM = m as { id: string; pp?: number; maxpp?: number; disabled?: boolean | string };
-      moves.push({ index: i + 1, id: m.id, pp: anyM.pp ?? 0, maxpp: anyM.maxpp ?? 0, disabled: !!anyM.disabled });
-    });
-    const struggle = moves.length === 1 && moves[0].id === "struggle";
-    const trapped = !!(data.trapped || data.maybeTrapped);
-    return { kind: "move", moves, switchable: trapped ? [] : switchable, trapped, struggle, locked };
+    const base = { slots: [] as SlotRequest[], replace: [] as number[], switchable, moves: [] as MoveOption[], trapped: false, struggle: false, locked: false };
+    if (state === "switch") return { ...base, kind: "switch", replace: side.active.filter((m) => m?.switchFlag).map((m) => m.position) };
+    if (state !== "move") return { ...base, kind: "wait" };
+    const slots: SlotRequest[] = [];
+    for (const active of side.active) {
+      if (!active || active.fainted) continue;
+      const data = active.getMoveRequestData();
+      const moves: MoveOption[] = [];
+      // Showdown sends a locked move without PP.
+      const locked = data.moves.length === 1 && !("pp" in data.moves[0]) && data.moves[0].id !== "struggle";
+      data.moves.forEach((m, i) => {
+        if (m.id === BAG_ACTION) return;
+        const anyM = m as { id: string; pp?: number; maxpp?: number; disabled?: boolean | string; target?: string };
+        moves.push({ index: i + 1, id: m.id, pp: anyM.pp ?? 0, maxpp: anyM.maxpp ?? 0, disabled: !!anyM.disabled, target: anyM.target ?? "" });
+      });
+      const struggle = moves.length === 1 && moves[0].id === "struggle";
+      const trapped = !!(data.trapped || data.maybeTrapped);
+      const canBag = !locked && !active.volatiles.encore && !active.volatiles.twoturnmove && !active.volatiles.mustrecharge && !active.volatiles.lockedmove;
+      slots.push({ pos: active.position, slot: BattleController.indexOf(active), moves, trapped, struggle, locked, canBag });
+    }
+    const first = slots[0];
+    return {
+      ...base,
+      kind: "move",
+      slots,
+      switchable: this.slots === 1 && first?.trapped ? [] : switchable,
+      moves: first?.moves ?? [],
+      trapped: !!first?.trapped,
+      struggle: !!first?.struggle,
+      locked: !!first?.locked,
+    };
   }
 
-  /** Lets the opponent answer any pending request (move, or replacement after a faint). */
+  /** Lets the opponent answer any pending request (moves, or replacements after a faint). */
   private foeChoose() {
     const side = this.battle.p2;
-    if (side.requestState === "move") this.battle.choose("p2", chooseAction(this.battle, this.opts.ai, this.rng));
-    else if (side.requestState === "switch") this.battle.choose("p2", chooseSwitch(this.battle, this.opts.ai, this.rng, this.aceName));
+    if (side.requestState === "move") this.battle.choose("p2", chooseActions(this.battle, this.opts.ai, this.rng, this.owners));
+    else if (side.requestState === "switch") this.battle.choose("p2", chooseSwitches(this.battle, this.opts.ai, this.rng, this.aces, this.owners));
   }
 
   private commit(p1Choice: string | null): BattleEvent[] {
@@ -274,41 +368,75 @@ export class BattleController {
     return this.drain();
   }
 
-  chooseMove(index: number): BattleEvent[] {
-    return this.commit(`move ${index}`);
-  }
-
-  chooseSwitch(partyIndex: number): BattleEvent[] {
-    const pos = this.battle.p1.pokemon.findIndex((m) => BattleController.indexOf(m) === partyIndex);
-    return this.commit(`switch ${pos + 1}`);
-  }
-
-  /** Spends the player's turn doing nothing in the sim (after a bag action). */
-  private passTurn(pre: BattleEvent[]): BattleEvent[] {
-    const active = this.playerActive;
-    const lastMove = active.lastMove;
-    active.moveSlots.push({ id: BAG_ACTION, move: "Bag Action", pp: 64, maxpp: 64, target: "self", disabled: false, used: false } as never);
-    const events = this.commit(`move ${active.moveSlots.length}`);
+  /**
+   * Plays the turn: one action per Pokémon that must act, left to right (`request().slots` for a
+   * move request, `request().replace` for a switch request). `pre` are events already produced
+   * by bag items (see `applyItem`).
+   */
+  submit(actions: SlotAction[], pre: BattleEvent[] = []): BattleEvent[] {
+    const side = this.battle.p1;
+    const acting = side.requestState === "switch" ? side.active.filter((m) => m?.switchFlag) : side.active.filter((m) => m && !m.fainted);
+    const choices: string[] = [];
+    const lastMoves = new Map<Pokemon, Pokemon["lastMove"]>();
+    actions.forEach((a, i) => {
+      if (a.kind === "move") choices.push(`move ${a.index}${a.target ? ` ${a.target}` : ""}`);
+      else if (a.kind === "switch") choices.push(`switch ${side.pokemon.findIndex((m) => BattleController.indexOf(m) === a.slot) + 1}`);
+      else if (a.kind === "pass") choices.push("pass");
+      else if (acting[i]) {
+        const mon = acting[i];
+        lastMoves.set(mon, mon.lastMove);
+        mon.moveSlots.push({ id: BAG_ACTION, move: "Bag Action", pp: 64, maxpp: 64, target: "self", disabled: false, used: false } as never);
+        choices.push(`move ${mon.moveSlots.length}`);
+      }
+    });
+    // Showdown reads switch choices spot by spot: spots that keep their Pokémon pass.
+    if (side.requestState === "switch") {
+      const queue = [...choices];
+      choices.length = 0;
+      for (const mon of side.active) choices.push(mon?.switchFlag ? queue.shift() ?? "pass" : "pass");
+    }
+    const events = this.commit(choices.join(", "));
     // Clean up so the bag never shows up as a move or a choice lock.
-    for (const mon of this.battle.p1.pokemon) {
+    for (const mon of side.pokemon) {
       mon.moveSlots = mon.moveSlots.filter((s) => s.id !== BAG_ACTION);
       if (mon.volatiles.choicelock?.move === BAG_ACTION) mon.removeVolatile("choicelock");
-      if (mon.lastMove?.id === BAG_ACTION) mon.lastMove = lastMove;
+      if (mon.lastMove?.id === BAG_ACTION) mon.lastMove = lastMoves.get(mon) ?? null;
     }
     return [...pre, ...events];
   }
 
+  chooseMove(index: number, target?: number): BattleEvent[] {
+    return this.submit([{ kind: "move", index, target }]);
+  }
+
+  chooseSwitch(partyIndex: number): BattleEvent[] {
+    return this.submit([{ kind: "switch", slot: partyIndex }]);
+  }
+
+  /** Spends the (single) player's turn doing nothing in the sim, after a bag action. */
+  private passTurn(pre: BattleEvent[]): BattleEvent[] {
+    return this.submit([{ kind: "bag" }], pre);
+  }
+
   /** Whether the bag can be used now (Choice-locked or Encored turns can't spare a move slot). */
   canUseBag(): boolean {
-    const active = this.playerActive;
-    return this.battle.p1.requestState === "move" && !active.volatiles.encore && !active.volatiles.twoturnmove && !active.volatiles.mustrecharge && !active.volatiles.lockedmove;
+    return this.battle.p1.requestState === "move" && !!this.request().slots[0]?.canBag;
   }
 
   /**
-   * Uses a medicine or X item on a party member (by party index). Returns the events, or null if
-   * it would have no effect.
+   * Uses a medicine or X item on a party member (by party index) and spends the turn. Returns
+   * the events, or null if it would have no effect.
    */
   useItem(itemId: string, partyIndex: number, moveIndex?: number): BattleEvent[] | null {
+    const pre = this.applyItem(itemId, partyIndex, moveIndex);
+    return pre ? this.passTurn(pre) : null;
+  }
+
+  /**
+   * Applies a bag item right away and returns its events (null if it would have no effect). The
+   * Pokémon that used the bag then spends its turn with a `bag` action.
+   */
+  applyItem(itemId: string, partyIndex: number, moveIndex?: number): BattleEvent[] | null {
     const def = itemDef(itemId);
     const mon = this.battle.p1.pokemon.find((m) => BattleController.indexOf(m) === partyIndex);
     if (!def || !mon) return null;
@@ -330,7 +458,7 @@ export class BattleController {
         const amount = heal.hp === "full" ? mon.maxhp : heal.hp;
         mon.hp = Math.min(mon.maxhp, mon.hp + amount);
         did = true;
-        if (mon.isActive) pre.push({ t: "heal", side: "p1", hp: mon.hp, maxhp: mon.maxhp, from: itemId });
+        if (mon.isActive) pre.push({ t: "heal", side: "p1", pos: mon.position, hp: mon.hp, maxhp: mon.maxhp, from: itemId });
         else pre.push({ t: "message", key: "battle.healedBench", params: { slot: partyIndex } });
       }
       if (heal.status && mon.status && (heal.status === "all" || heal.status.includes(mon.status as StatusId))) {
@@ -338,7 +466,7 @@ export class BattleController {
         mon.clearStatus();
         if (heal.status === "all" && mon.volatiles.confusion) mon.removeVolatile("confusion");
         did = true;
-        if (mon.isActive) pre.push({ t: "curestatus", side: "p1", status: prev });
+        if (mon.isActive) pre.push({ t: "curestatus", side: "p1", pos: mon.position, status: prev });
       }
       if (heal.pp) {
         const slots = heal.allMoves ? mon.moveSlots : moveIndex !== undefined ? [mon.moveSlots[moveIndex]] : [];
@@ -356,10 +484,9 @@ export class BattleController {
       const applied = mon.boostBy(def.boost);
       if (!applied) return null;
       did = true;
-      for (const [stat, amount] of Object.entries(def.boost)) pre.push({ t: "boost", side: "p1", stat, amount: amount ?? 0 });
+      for (const [stat, amount] of Object.entries(def.boost)) pre.push({ t: "boost", side: "p1", pos: mon.position, stat, amount: amount ?? 0 });
     }
-    if (!did) return null;
-    return this.passTurn(pre);
+    return did ? pre : null;
   }
 
   throwBall(ballId: string, caughtBefore: boolean): BattleEvent[] {

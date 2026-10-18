@@ -158,13 +158,13 @@ export function teamSize(floor: number, boss: boolean): number {
 }
 
 /** A trainer's team for a room. The ace is the last member (sent out last). */
-export function buildTrainerTeam(trainerId: string, floor: number, level: number, boss: boolean, seed: number, shinyRate: number): OwnedPokemon[] {
+export function buildTrainerTeam(trainerId: string, floor: number, level: number, boss: boolean, seed: number, shinyRate: number, sizeOverride?: number): OwnedPokemon[] {
   const rng = new Rng(seed);
   // Shininess has its own sequence so it never depends on how the sets were built.
   const shinyRng = new Rng(seed ^ 0x51a1e5);
   const shinies = [0, 1, 2, 3, 4, 5].map(() => shinyRng.chance(shinyRate));
   const tr = trainer(trainerId);
-  const size = Math.min(teamSize(floor, boss), tr.roster.length);
+  const size = Math.min(sizeOverride ?? teamSize(floor, boss), tr.roster.length);
   const quality = qualityFor(floor, boss);
   // Legendaries (N's Zekrom) only join once the echo is strong enough.
   const roster = tr.roster.filter((s) => !speciesMeta(s).legendary || level >= 50);
@@ -177,4 +177,28 @@ export function buildTrainerTeam(trainerId: string, floor: number, level: number
   });
   team.push(buildNpcPokemon({ species: ace, level: Math.min(100, level + (boss ? 2 : 1)), rng, quality: { ...quality, ivs: Math.max(quality.ivs, 1) as Quality["ivs"] }, shiny: shinies[5] }));
   return team;
+}
+
+export interface FoeTeam {
+  foe: OwnedPokemon[];
+  /** Tag battles: owner (0 trainer, 1 partner) of each foe. */
+  owners?: number[];
+}
+
+/**
+ * The foes of a trainer room. Doubles get at least two Pokémon; in a tag battle each trainer
+ * brings a smaller team of their own, and their leads come first (trainer left, partner right).
+ */
+export function buildRoomTeam(room: { trainer?: string; partner?: string; double?: boolean; kind: string; level: number; seed: number }, floor: number, shinyRate: number): FoeTeam {
+  const boss = room.kind === "boss";
+  if (!room.partner) {
+    const size = room.double ? Math.max(2, teamSize(floor, boss)) : undefined;
+    return { foe: buildTrainerTeam(room.trainer!, floor, room.level, boss, room.seed, shinyRate, size) };
+  }
+  const size = Math.max(2, Math.ceil(teamSize(floor, boss) * 0.6));
+  const a = buildTrainerTeam(room.trainer!, floor, room.level, boss, room.seed, shinyRate, size);
+  const b = buildTrainerTeam(room.partner, floor, room.level, boss, room.seed ^ 0x7a9, shinyRate, size);
+  const foe = [a[0], b[0], ...a.slice(1), ...b.slice(1)];
+  const owners = [0, 1, ...a.slice(1).map(() => 0), ...b.slice(1).map(() => 1)];
+  return { foe, owners };
 }

@@ -14,6 +14,10 @@ export interface Room {
   level: number;
   seed: number;
   trainer?: string;
+  /** Trainer rooms: a double battle (two Pokémon a side). */
+  double?: boolean;
+  /** Tag battles: the second trainer, fighting alongside `trainer` with their own team. */
+  partner?: string;
   species?: string;
   shiny?: boolean;
   /** Item choices (item room) or stock (merchant). */
@@ -33,6 +37,11 @@ export interface Floor {
 }
 
 export const STEPS_PER_FLOOR = 5;
+/** First floors where double battles, then tag battles (two trainers), show up. */
+export const DOUBLE_FROM = 5;
+export const TAG_FROM = 8;
+/** Tate & Liza always fight double battles. */
+const TWINS = "tateandliza";
 export const BASE_SHINY_RATE = 1 / 256;
 
 /** Level of the wild Pokémon and trainers on a floor. Floor 30 ≈ 75, the Apex reaches 100 by floor 43. */
@@ -134,10 +143,19 @@ export function generateFloor(n: number, seed: number, ctx: FloorContext): Floor
       const roomRng = new Rng(roomSeed);
       const room: Room = { id: `${n}-${step}-${d}`, kind, level, seed: roomSeed };
       switch (kind) {
-        case "trainer":
+        case "trainer": {
           room.trainer = trainers[trainerCursor++ % trainers.length];
           room.weather = rollWeather(theme, roomRng);
+          // Its own sequence, so adding doubles left every existing floor as it was.
+          const fmt = new Rng(roomSeed ^ 0xd0b1e);
+          const partners = trainers.filter((t) => t !== room.trainer);
+          if (room.trainer === TWINS) room.double = true;
+          else if (n >= DOUBLE_FROM && fmt.chance(apex ? 0.3 : 0.2)) {
+            room.double = true;
+            if (n >= TAG_FROM && partners.length && fmt.chance(0.45)) room.partner = fmt.pick(partners);
+          }
           break;
+        }
         case "wild": {
           const lvl = Math.max(2, level - 1 + roomRng.int(0, 2));
           room.level = Math.min(100, lvl);
@@ -171,7 +189,7 @@ export function generateFloor(n: number, seed: number, ctx: FloorContext): Floor
 
   const bossSeed = rng.fork();
   const bossId = apex ? new Rng(bossSeed).pick(APEX_BOSSES) : theme.boss;
-  steps.push([{ id: `${n}-boss`, kind: "boss", level: Math.min(100, base + 3), seed: bossSeed, trainer: bossId, weather: rollWeather(theme, new Rng(bossSeed ^ 1)) }]);
+  steps.push([{ id: `${n}-boss`, kind: "boss", level: Math.min(100, base + 3), seed: bossSeed, trainer: bossId, double: bossId === TWINS || undefined, weather: rollWeather(theme, new Rng(bossSeed ^ 1)) }]);
   return { n, theme, steps, trainers };
 }
 

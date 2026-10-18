@@ -70,14 +70,15 @@ interface Option {
   score: number;
 }
 
-function usableMoves(p: Pokemon): { slot: number; move: Move }[] {
+/** Moves the request offers, with the target type it asks for (none for a locked move). */
+function usableMoves(p: Pokemon): { slot: number; move: Move; target?: string }[] {
   const req = p.getMoveRequestData();
-  const out: { slot: number; move: Move }[] = [];
+  const out: { slot: number; move: Move; target?: string }[] = [];
   req.moves.forEach((m, i) => {
     const disabled = "disabled" in m && m.disabled;
     if (m.id === "bagaction" || disabled) return;
     if ("pp" in m && typeof m.pp === "number" && m.pp <= 0) return;
-    out.push({ slot: i + 1, move: p.battle.dex.moves.get(m.id) });
+    out.push({ slot: i + 1, move: p.battle.dex.moves.get(m.id), target: "target" in m ? (m.target as string) : undefined });
   });
   return out;
 }
@@ -117,15 +118,14 @@ function scoreStatusMove(battle: Battle, me: Pokemon, foe: Pokemon, move: Move, 
   return 0.15;
 }
 
-/** Best switch-in against the foe's active (expert/smart). Returns -1 if staying is better. */
-function bestSwitch(battle: Battle, me: Pokemon, foe: Pokemon): { slot: number; gain: number } {
-  const side = me.side;
-  const ownBest = (p: Pokemon) => Math.max(0, ...usableMovesOf(p).map((m) => estimateDamage(battle, p, foe, m)));
-  const takenFrom = (p: Pokemon) => Math.max(0, ...foe.moveSlots.map((s) => estimateDamage(battle, foe, p, battle.dex.moves.get(s.id), false)));
+/** Best switch-in against the foes on the field (expert/smart). Returns -1 if staying is better. */
+function bestSwitch(battle: Battle, me: Pokemon, foes: Pokemon[], allowed: (p: Pokemon, i: number) => boolean): { slot: number; gain: number } {
+  const ownBest = (p: Pokemon) => Math.max(0, ...foes.flatMap((foe) => usableMovesOf(p).map((m) => estimateDamage(battle, p, foe, m))));
+  const takenFrom = (p: Pokemon) => Math.max(0, ...foes.flatMap((foe) => foe.moveSlots.map((s) => estimateDamage(battle, foe, p, battle.dex.moves.get(s.id), false))));
   const current = ownBest(me) - takenFrom(me);
   let best = { slot: -1, gain: 0 };
-  side.pokemon.forEach((p, i) => {
-    if (p.isActive || p.fainted || p.hp <= 0) return;
+  me.side.pokemon.forEach((p, i) => {
+    if (p.isActive || p.fainted || p.hp <= 0 || !allowed(p, i)) return;
     const value = ownBest(p) - takenFrom(p) * 1.15;
     const gain = value - current;
     if (gain > best.gain) best = { slot: i + 1, gain };
@@ -137,19 +137,40 @@ function usableMovesOf(p: Pokemon): Move[] {
   return p.moveSlots.filter((s) => s.pp > 0 && s.id !== "bagaction").map((s) => p.battle.dex.moves.get(s.id));
 }
 
-/** Choice string for side p2 when it must pick a move (or may switch). */
-export function chooseAction(battle: Battle, level: AiLevel, rng: Rng): string {
-  const me = battle.p2.active[0];
-  const foe = battle.p1.active[0];
+const CHOOSABLE = new Set(["normal", "any", "adjacentAlly", "adjacentAllyOrSelf", "adjacentFoe"]);
+const SPREAD = new Set(["allAdjacentFoes", "allAdjacent"]);
+
+/** Owner (0 or 1) of a team member in tag battles; their spot on the field is the same number. */
+function ownerOf(p: Pokemon, owners: number[] | undefined): number | undefined {
+  return owners?.[Number(p.set.name.slice(1))];
+}
+
+/** One active foe's choice. `taken` collects bench members already picked this turn. */
+function chooseFor(battle: Battle, me: Pokemon, level: AiLevel, rng: Rng, taken: Set<number>, owners: number[] | undefined): string {
+  const double = battle.p2.active.length > 1;
+  const foes = battle.p1.active.filter((p) => p && !p.fainted);
+  const ally = double ? battle.p2.active.find((p) => p && p !== me && !p.fainted) : undefined;
   const moves = usableMoves(me);
   if (!moves.length) return "move 1"; // Struggle
-  if (level === "wild" || !foe) return `move ${rng.pick(moves).slot}`;
+  // Locked moves come without a target type and take no target.
+  const loc = (target: Pokemon) => (target.side === me.side ? -(target.position + 1) : target.position + 1);
+  const pick = (slot: number, reqTarget: string | undefined, target?: Pokemon) => {
+    if (!double || !reqTarget || !CHOOSABLE.has(reqTarget)) return `move ${slot}`;
+    if (reqTarget === "adjacentAllyOrSelf") return `move ${slot} ${loc(me)}`;
+    if (reqTarget === "adjacentAlly") return ally ? `move ${slot} ${loc(ally)}` : null;
+    return target ? `move ${slot} ${loc(target)}` : null;
+  };
+  const usable = moves.filter((m) => m.target !== "adjacentAlly" || ally);
+  if (!foes.length) return pick(usable[0]?.slot ?? 1, usable[0]?.target, ally) ?? "move 1";
+  if (level === "wild") {
+    const m = rng.pick(usable.length ? usable : moves);
+    return pick(m.slot, m.target, rng.pick(foes)) ?? `move ${m.slot}`;
+  }
 
   const knows = level === "expert";
-  const myFaster = speedOf(me) >= speedOf(foe);
-  const threat = Math.max(0, ...foe.moveSlots.map((s) => estimateDamage(battle, foe, me, battle.dex.moves.get(s.id), false)));
-  const options: Option[] = moves.map(({ slot, move }) => {
-    if (move.category === "Status") return { choice: `move ${slot}`, score: level === "basic" ? scoreStatusMove(battle, me, foe, move, level, threat) * 0.6 : scoreStatusMove(battle, me, foe, move, level, threat) };
+  const myFaster = foes.every((foe) => speedOf(me) >= speedOf(foe));
+  const threat = Math.max(0, ...foes.flatMap((foe) => foe.moveSlots.map((s) => estimateDamage(battle, foe, me, battle.dex.moves.get(s.id), false))));
+  const attack = (move: Move, foe: Pokemon) => {
     const dmg = estimateDamage(battle, me, foe, move, knows || level === "smart");
     let score = Math.min(dmg, 1.2);
     if (dmg >= 1) {
@@ -157,21 +178,53 @@ export function chooseAction(battle: Battle, level: AiLevel, rng: Rng): string {
       if (move.priority > 0 && !myFaster) score += 0.5;
     }
     if (move.priority > 0 && foe.hp / foe.maxhp < 0.25) score += 0.2;
-    if (move.self?.boosts && Object.values(move.self.boosts).some((b) => (b ?? 0) < 0)) score -= 0.08; // Overheat & co
-    if (move.recoil || move.mindBlownRecoil) score -= 0.05;
-    if (move.flags.charge && !me.volatiles.twoturnmove && me.item !== "powerherb") score -= 0.3;
-    if (move.flags.recharge) score -= 0.15;
-    return { choice: `move ${slot}`, score };
-  });
+    return score;
+  };
+  const drawbacks = (move: Move) => {
+    let d = 0;
+    if (move.self?.boosts && Object.values(move.self.boosts).some((b) => (b ?? 0) < 0)) d += 0.08; // Overheat & co
+    if (move.recoil || move.mindBlownRecoil) d += 0.05;
+    if (move.flags.charge && !me.volatiles.twoturnmove && me.item !== "powerherb") d += 0.3;
+    if (move.flags.recharge) d += 0.15;
+    return d;
+  };
+
+  const options: Option[] = [];
+  const push = (choice: string | null, score: number) => void (choice && options.push({ choice, score }));
+  for (const { slot, move, target } of usable) {
+    if (move.category === "Status") {
+      if (target === "adjacentAlly") {
+        push(pick(slot, target), 0.1);
+        continue;
+      }
+      const aimed = double && target && CHOOSABLE.has(target) && target !== "adjacentAllyOrSelf";
+      for (const foe of aimed ? foes : foes.slice(0, 1)) {
+        const s = scoreStatusMove(battle, me, foe, move, level, threat);
+        push(pick(slot, target, foe), level === "basic" ? s * 0.6 : s);
+      }
+      continue;
+    }
+    if (double && SPREAD.has(move.target)) {
+      // Spread moves lose a quarter of their power in doubles; Earthquake & co also hit the ally.
+      let score = foes.reduce((sum, foe) => sum + attack(move, foe) * 0.75, 0);
+      if (move.target === "allAdjacent" && ally) score -= Math.min(1, estimateDamage(battle, me, ally, move, true)) * 1.5;
+      push(pick(slot, target), score - drawbacks(move));
+      continue;
+    }
+    for (const foe of double ? foes : foes.slice(0, 1)) push(pick(slot, target, foe), attack(move, foe) - drawbacks(move));
+  }
+  if (!options.length) return `move ${moves[0].slot}`;
 
   // Smart trainers bail out of hopeless matchups now and then.
-  const canSwitch = !me.trapped && !me.volatiles.partiallytrapped && me.side.pokemon.some((p) => !p.isActive && !p.fainted);
+  const allowed = (p: Pokemon, i: number) => !taken.has(i + 1) && (owners === undefined || ownerOf(p, owners) === me.position);
+  const canSwitch = !me.trapped && !me.volatiles.partiallytrapped && me.side.pokemon.some((p, i) => !p.isActive && !p.fainted && allowed(p, i));
   if (canSwitch && (level === "smart" || level === "expert")) {
-    const best = bestSwitch(battle, me, foe);
+    const best = bestSwitch(battle, me, foes, allowed);
     const bestMove = Math.max(...options.map((o) => o.score));
-    const danger = threat >= me.hp / me.maxhp * 0.9 && !myFaster;
+    const danger = threat >= (me.hp / me.maxhp) * 0.9 && !myFaster;
     const threshold = level === "expert" ? 0.45 : 0.75;
     if (best.slot > 0 && best.gain > threshold && (danger || bestMove < 0.3) && rng.chance(level === "expert" ? 0.85 : 0.45)) {
+      taken.add(best.slot);
       return `switch ${best.slot}`;
     }
   }
@@ -186,28 +239,58 @@ export function chooseAction(battle: Battle, level: AiLevel, rng: Rng): string {
   return options[0].choice;
 }
 
-/** Replacement after a faint (or U-turn): the member that does best against the foe. */
-export function chooseSwitch(battle: Battle, level: AiLevel, rng: Rng, ace: string): string {
+/** Choice string for side p2 when it must pick its moves (or may switch). */
+export function chooseActions(battle: Battle, level: AiLevel, rng: Rng, owners?: number[]): string {
+  const taken = new Set<number>();
+  return battle.p2.active.map((me) => (!me || me.fainted ? "pass" : chooseFor(battle, me, level, rng, taken, owners))).join(", ");
+}
+
+/**
+ * Replacements after a faint (or U-turn): the member that does best against the player's side.
+ * In tag battles (`owners`), each spot only takes its own trainer's Pokémon, or stays empty.
+ */
+export function chooseSwitches(battle: Battle, level: AiLevel, rng: Rng, aces: Set<string>, owners?: number[]): string {
   const side = battle.p2;
-  const foe = battle.p1.active[0];
-  const candidates = side.pokemon.map((p, i) => ({ p, slot: i + 1 })).filter(({ p }) => !p.isActive && !p.fainted && p.hp > 0);
-  if (!candidates.length) return "pass";
-  if (level === "wild" || level === "basic" || !foe) {
+  const foes = battle.p1.active.filter((p) => p && !p.fainted);
+  const taken = new Set<number>();
+  const choices: string[] = [];
+  // Every spot gets a choice: spots that keep their Pokémon pass.
+  for (const active of side.active) {
+    if (!active?.switchFlag) {
+      choices.push("pass");
+      continue;
+    }
+    const candidates = side.pokemon
+      .map((p, i) => ({ p, slot: i + 1 }))
+      .filter(({ p, slot }) => !p.isActive && !p.fainted && p.hp > 0 && !taken.has(slot) && (owners === undefined || ownerOf(p, owners) === active.position));
+    if (!candidates.length) {
+      choices.push("pass");
+      continue;
+    }
+    const pick = chooseReplacement(battle, level, rng, aces, candidates, foes);
+    taken.add(pick);
+    choices.push(`switch ${pick}`);
+  }
+  return choices.join(", ") || "pass";
+}
+
+function chooseReplacement(battle: Battle, level: AiLevel, rng: Rng, aces: Set<string>, candidates: { p: Pokemon; slot: number }[], foes: Pokemon[]): number {
+  if (level === "wild" || level === "basic" || !foes.length) {
     // Keep the ace for the end.
-    const nonAce = candidates.filter((c) => c.p.set.name !== ace);
-    return `switch ${(nonAce.length ? (level === "basic" ? nonAce[0] : rng.pick(nonAce)) : candidates[0]).slot}`;
+    const nonAce = candidates.filter((c) => !aces.has(c.p.set.name));
+    return (nonAce.length ? (level === "basic" ? nonAce[0] : rng.pick(nonAce)) : candidates[0]).slot;
   }
   let best = candidates[0];
   let bestScore = -Infinity;
   for (const c of candidates) {
-    const dealt = Math.max(0, ...usableMovesOf(c.p).map((m) => estimateDamage(battle, c.p, foe, m)));
-    const taken = Math.max(0, ...foe.moveSlots.map((s) => estimateDamage(battle, foe, c.p, battle.dex.moves.get(s.id), false)));
-    let score = Math.min(dealt, 1.5) - taken + (speedOf(c.p) > speedOf(foe) ? 0.2 : 0);
-    if (c.p.set.name === ace && candidates.length > 1) score -= 0.4; // save the ace
+    const dealt = Math.max(0, ...foes.flatMap((foe) => usableMovesOf(c.p).map((m) => estimateDamage(battle, c.p, foe, m))));
+    const taken = Math.max(0, ...foes.flatMap((foe) => foe.moveSlots.map((s) => estimateDamage(battle, foe, c.p, battle.dex.moves.get(s.id), false))));
+    let score = Math.min(dealt, 1.5) - taken + (foes.every((foe) => speedOf(c.p) > speedOf(foe)) ? 0.2 : 0);
+    if (aces.has(c.p.set.name) && candidates.length > 1) score -= 0.4; // save the ace
     if (score > bestScore) {
       bestScore = score;
       best = c;
     }
   }
-  return `switch ${best.slot}`;
+  return best.slot;
 }

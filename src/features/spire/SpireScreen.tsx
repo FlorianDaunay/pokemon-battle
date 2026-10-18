@@ -149,6 +149,8 @@ function Door({ room, index, empty, onChoose }: { room: Room; index: number; emp
   const t = useT();
   const style = KIND_STYLE[room.kind];
   const tr = room.trainer ? trainer(room.trainer) : null;
+  const partner = room.partner ? trainer(room.partner) : null;
+  const label = partner ? "tag" : room.double ? "double" : room.kind;
   return (
     <button
       onClick={onChoose}
@@ -157,7 +159,12 @@ function Door({ room, index, empty, onChoose }: { room: Room; index: number; emp
     >
       <div className="absolute inset-x-0 top-0 h-24 opacity-40" style={{ background: `radial-gradient(closest-side, ${style.color}, transparent)` }} />
       <div className="relative grid h-24 w-full place-items-center sm:h-28">
-        {tr ? (
+        {tr && partner ? (
+          <div className="flex -space-x-8">
+            <TrainerSprite trainer={tr} className="h-24 w-20 object-contain drop-shadow-lg sm:h-28 sm:w-24" />
+            <TrainerSprite trainer={partner} className="h-24 w-20 object-contain drop-shadow-lg sm:h-28 sm:w-24" />
+          </div>
+        ) : tr ? (
           <TrainerSprite trainer={tr} className="h-24 w-24 object-contain drop-shadow-lg sm:h-28 sm:w-28" />
         ) : room.species ? (
           <div className="relative">
@@ -171,9 +178,9 @@ function Door({ room, index, empty, onChoose }: { room: Room; index: number; emp
         )}
         {room.shiny && !empty && <span className="absolute right-1 top-0 text-yellow-200 animate-pulse" title={t("spire.shinyHint")}><Icon name="sparkle" size={22} /></span>}
       </div>
-      <div className="relative mt-2 text-sm font-black" style={{ color: style.color }}>{t(`spire.kind.${room.kind}`)}</div>
-      {tr && <div className="relative text-xs font-bold">{trainerName(tr, t.lang)} <span className="text-white/60">· {t(`trainerClass.${tr.cls}`)}</span></div>}
-      <div className="relative mt-1 text-center text-[11px] leading-snug text-white/75">{empty ? `${t(room.kind === "item" ? "spire.claimed" : "spire.caughtHere")} ${t("spire.passThrough")}` : t(`spire.kindDesc.${room.kind}`)}</div>
+      <div className="relative mt-2 text-sm font-black" style={{ color: style.color }}>{t(`spire.kind.${label}`)}</div>
+      {tr && <div className="relative text-center text-xs font-bold">{trainerName(tr, t.lang)}{partner ? ` & ${trainerName(partner, t.lang)}` : <span className="text-white/60"> · {t(`trainerClass.${tr.cls}`)}</span>}</div>}
+      <div className="relative mt-1 text-center text-[11px] leading-snug text-white/75">{empty ? `${t(room.kind === "item" ? "spire.claimed" : "spire.caughtHere")} ${t("spire.passThrough")}` : t(`spire.kindDesc.${label}`)}</div>
       <div className="relative mt-2 flex items-center gap-1 text-[10px] font-bold text-white/70">
         {room.kind !== "item" && room.kind !== "rest" && room.kind !== "merchant" && <span>{t("common.lv")}{room.level}</span>}
         {room.weather && <span className="chip !py-0 !text-[10px]">{t(`spire.weather.${room.weather}`)}</span>}

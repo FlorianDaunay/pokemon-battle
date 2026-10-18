@@ -5,7 +5,7 @@
 
 export type Side = "p1" | "p2";
 
-export type BattleEvent =
+export type BattleEvent = (
   | { t: "switch"; side: Side; slot: number; hp: number; maxhp: number; drag?: boolean }
   | { t: "move"; side: Side; move: string; target?: Side; miss?: boolean; still?: boolean }
   | { t: "damage"; side: Side; hp: number; maxhp: number; from?: string; of?: Side }
@@ -33,13 +33,25 @@ export type BattleEvent =
   | { t: "bag"; item: string; target: number }
   | { t: "ball"; ball: string; shakes: number; caught: boolean }
   | { t: "run"; ok: boolean }
-  | { t: "message"; key: string; params?: Record<string, string | number> };
+  | { t: "message"; key: string; params?: Record<string, string | number> }
+) & {
+  /** Field position of the Pokémon the event is about (0 left, 1 right in doubles). */
+  pos?: number;
+  /** Field position of a move's target. */
+  targetPos?: number;
+};
 
 export function sideOf(ident: string | undefined): Side | undefined {
   if (!ident) return undefined;
   if (ident.startsWith("p1")) return "p1";
   if (ident.startsWith("p2")) return "p2";
   return undefined;
+}
+
+/** Field position from an ident ("p2b: S3" → 1). */
+export function posOf(ident: string | undefined): number | undefined {
+  const m = ident ? /^p[12]([a-c])/.exec(ident) : null;
+  return m ? m[1].charCodeAt(0) - 97 : undefined;
 }
 
 /** Slot index from our nicknames ("S0".."S5"). */
@@ -89,6 +101,8 @@ export function parseLines(lines: string[]): BattleEvent[] {
     const [cmd, a1, a2, a3] = parts;
     const rest = parts.slice(1);
     const side = sideOf(a1);
+    const pos = posOf(a1);
+    const before = events.length;
     switch (cmd) {
       case "switch":
       case "drag":
@@ -104,6 +118,7 @@ export function parseLines(lines: string[]): BattleEvent[] {
           side: side!,
           move: a2,
           target: sideOf(a3),
+          targetPos: posOf(a3),
           miss: rest.includes("[miss]"),
           still: rest.includes("[still]"),
         });
@@ -152,7 +167,7 @@ export function parseLines(lines: string[]): BattleEvent[] {
         events.push({ t: "crit", side: side! });
         break;
       case "-miss":
-        events.push({ t: "miss", side: sideOf(a2) ?? side! });
+        events.push({ t: "miss", side: sideOf(a2) ?? side!, pos: posOf(a2) ?? pos });
         break;
       case "-fail":
         events.push({ t: "fail", side: side! });
@@ -220,6 +235,7 @@ export function parseLines(lines: string[]): BattleEvent[] {
         events.push({ t: "win", side: null });
         break;
     }
+    for (let i = before; i < events.length; i++) if (events[i].pos === undefined && pos !== undefined) events[i].pos = pos;
   }
   return events;
 }
