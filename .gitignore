@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.claude/
+.work/
+*.log
+.DS_Store
+# local test saves (generated, never committed)
+save-*.json
+scratch/
+*.tsbuildinfo
