@@ -83,3 +83,17 @@ describe("locked moves", () => {
     expect(ctrl.request().locked).toBe(false);
   });
 });
+
+describe("party with knocked-out members", () => {
+  it("ends the battle when the last healthy Pokémon faints", () => {
+    const rng = new Rng(3);
+    const player = [createPokemon({ species: "magikarp", level: 5, rng, moves: ["splash"] }), createPokemon({ species: "pidgey", level: 5, rng })];
+    player[1].hp = 0;
+    const foe = [createPokemon({ species: "machamp", level: 60, rng })];
+    const ctrl = new BattleController({ kind: "wild", player, foe, ai: "wild", seed: 9, ball });
+    ctrl.drain();
+    expect(ctrl.battle.p1.pokemonLeft).toBe(1);
+    ctrl.chooseMove(1);
+    expect(ctrl.outcome).toBe("lose");
+  });
+});

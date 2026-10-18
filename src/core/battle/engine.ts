@@ -163,6 +163,15 @@ export class BattleController {
     this.cursor = this.battle.log.length;
     this.battle.setPlayer("p2", { name: "Foe", team: Teams.pack(opts.foe.map(toSet)) });
     for (const mon of this.battle.p2.pokemon) syncPp(mon, opts.foe[BattleController.indexOf(mon)]);
+    // Starting the battle resets the count of usable Pokémon: re-apply the ones already knocked out.
+    for (const mon of this.battle.p1.pokemon) {
+      if (opts.player[BattleController.indexOf(mon)].hp <= 0) {
+        mon.hp = 0;
+        mon.fainted = true;
+        mon.status = "fnt" as never;
+      }
+    }
+    this.battle.p1.pokemonLeft = this.battle.p1.pokemon.filter((m) => !m.fainted).length;
     this.markActive();
 
     if (opts.weather && !this.battle.field.weather) {
