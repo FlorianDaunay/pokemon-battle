@@ -81,6 +81,7 @@
 @keyframes evo-glow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(8) saturate(0); } }
 @keyframes door-glow { 0%, 100% { box-shadow: 0 0 18px 0 var(--glow, rgb(255 210 120 / 0.35)); } 50% { box-shadow: 0 0 34px 6px var(--glow, rgb(255 210 120 / 0.55)); } }
 @keyframes spin-slow { to { transform: rotate(360deg); } }
+@keyframes duck-orbit { from { transform: rotate(0deg) translateX(52px) rotate(0deg); } to { transform: rotate(360deg) translateX(52px) rotate(-360deg); } }
 @keyframes rays { to { transform: rotate(360deg); } }
 
 .animate-float { animation: float 4s ease-in-out infinite; }

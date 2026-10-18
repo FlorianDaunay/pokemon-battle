@@ -29,7 +29,7 @@ import { cry, hitSfx, jingles, sfx } from "@/audio/sfx";
 import { avatarUrl } from "@/features/title/NewGameScreen";
 import { MoveFx } from "./MoveFx";
 import type { FxPoint, MoveFxHandle } from "./MoveFx";
-import { narrate } from "./narrate";
+import { effectLabel, narrate } from "./narrate";
 
 interface SideView {
   slot: number;
@@ -42,6 +42,19 @@ interface SideView {
   gender: string;
   anim: string;
   visible: boolean;
+  /** Stat stages (−6…+6), only the non-zero ones. */
+  boosts: Record<string, number>;
+  /** Behind a Substitute. */
+  sub: boolean;
+  confused: boolean;
+}
+
+/** What lies on the field: hazards and screens per side (with layers or turns), field effects. */
+interface FieldView {
+  sides: Record<Side, Record<string, number>>;
+  field: string[];
+  /** Turns of weather left, null when it lasts (abilities in Gen 5, the floor's own weather). */
+  weatherTurns: number | null;
 }
 
 /** The Pokémon on one side of the field, by position (one entry in singles, two in doubles). */
@@ -113,6 +126,8 @@ export function BattleScreen() {
       double: !!room.double,
       foeOwners: owners,
     });
+    // Handy when debugging in the browser console.
+    if (import.meta.env.DEV) (window as unknown as { __battle?: BattleController }).__battle = ctrl;
     return { room, floor, tr, partner, owners, foe, party, ctrl, theme };
   }, [req]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -154,6 +169,7 @@ function BattleView({ room, floor, tr, partner, owners, foe, party, ctrl, theme 
   const [shown, setShown] = useState(0);
   const [menu, setMenu] = useState<Menu>("none");
   const [weather, setWeather] = useState<string | null>(null);
+  const [field, setField] = useState<FieldView>({ sides: { p1: {}, p2: {} }, field: [], weatherTurns: null });
   const [shake, setShake] = useState(0);
   const [flash, setFlash] = useState(false);
   const [trainerOnField, setTrainerOnField] = useState<"in" | "out" | "gone">(tr ? "in" : "gone");
@@ -257,7 +273,22 @@ function BattleView({ room, floor, tr, partner, owners, foe, party, ctrl, theme 
     const p = side === "p1" ? party[slot] : foe[slot];
     const mon = (side === "p1" ? ctrl.battle.p1 : ctrl.battle.p2).pokemon.find((m) => BattleController.indexOf(m) === slot);
     const st = mon?.status as string | undefined;
-    return { slot, species: p.species, level: p.level, hp, maxhp, status: st && st !== "fnt" ? st : undefined, shiny: p.shiny, gender: p.gender, anim: "animate-send-out", visible: true };
+    return { slot, species: p.species, level: p.level, hp, maxhp, status: st && st !== "fnt" ? st : undefined, shiny: p.shiny, gender: p.gender, anim: "animate-send-out", visible: true, boosts: {}, sub: false, confused: false };
+  };
+
+  /** Reads stat stages, substitutes, confusion, hazards and screens back from the sim (end of a turn). */
+  const resync = () => {
+    for (const side of ["p1", "p2"] as Side[]) {
+      const simSide = side === "p1" ? ctrl.battle.p1 : ctrl.battle.p2;
+      simSide.active.forEach((mon, pos) => {
+        if (!mon || mon.fainted) return;
+        const boosts = Object.fromEntries(Object.entries(mon.boosts).filter(([, v]) => v));
+        setSide(side, pos, (v) => (v.slot === BattleController.indexOf(mon) ? { boosts, sub: !!mon.volatiles.substitute, confused: !!mon.volatiles.confusion } : {}));
+      });
+    }
+    const conds = (side: typeof ctrl.battle.p1) => Object.fromEntries(Object.entries(side.sideConditions).map(([id, c]) => [id, (c as { layers?: number }).layers ?? ((c as { duration?: number }).duration || 1)]));
+    const ws = ctrl.battle.field.weatherState as { duration?: number };
+    setField({ sides: { p1: conds(ctrl.battle.p1), p2: conds(ctrl.battle.p2) }, field: Object.keys(ctrl.battle.field.pseudoWeather), weatherTurns: ctrl.battle.field.weather && ws.duration ? ws.duration : null });
   };
 
   /** Plays one event: text, sound and animation. */
@@ -358,6 +389,11 @@ function BattleView({ room, floor, tr, partner, owners, foe, party, ctrl, theme 
         await say(narrate(e, ctx));
         break;
       case "boost":
+        setSide(e.side, pos, (v) => {
+          const next = { ...v.boosts, [e.stat]: Math.max(-6, Math.min(6, (v.boosts[e.stat] ?? 0) + e.amount)) };
+          if (!next[e.stat]) delete next[e.stat];
+          return { boosts: next };
+        });
         sfx(e.amount > 0 ? "statUp" : "statDown");
         await fxRef.current?.play({ kind: "aura", type: e.amount > 0 ? "Water" : "Fighting", from: point(e.side, pos), to: point(e.side, pos) });
         await say(narrate(e, ctx));
@@ -414,6 +450,28 @@ function BattleView({ room, floor, tr, partner, owners, foe, party, ctrl, theme 
       case "turn":
       case "win":
         break;
+      case "effect": {
+        const id = toID(e.effect);
+        if (e.side && (e.kind === "start" || e.kind === "end") && (id === "substitute" || id === "confusion")) {
+          setSide(e.side, pos, id === "substitute" ? { sub: e.kind === "start" } : { confused: e.kind === "start" });
+        }
+        if (e.side && (e.kind === "sidestart" || e.kind === "sideend")) {
+          const side = e.side;
+          setField((f) => {
+            const conds = { ...f.sides[side] };
+            if (e.kind === "sidestart") conds[id] = (conds[id] ?? 0) + 1;
+            else delete conds[id];
+            return { ...f, sides: { ...f.sides, [side]: conds } };
+          });
+        }
+        if (e.kind === "fieldstart" || e.kind === "fieldend") setField((f) => ({ ...f, field: e.kind === "fieldstart" ? [...f.field, id] : f.field.filter((x) => x !== id) }));
+        if (e.kind === "clearallboost") for (const sd of ["p1", "p2"] as Side[]) for (const ps of [0, 1]) setSide(sd, ps, { boosts: {} });
+        if (e.side && (e.kind === "clearboost" || e.kind === "clearnegativeboost")) {
+          setSide(e.side, pos, (v) => ({ boosts: e.kind === "clearboost" ? {} : Object.fromEntries(Object.entries(v.boosts).filter(([, b]) => b > 0)) }));
+        }
+        await say(narrate(e, ctx));
+        break;
+      }
       default:
         await say(narrate(e, ctx));
     }
@@ -449,6 +507,7 @@ function BattleView({ room, floor, tr, partner, owners, foe, party, ctrl, theme 
       return;
     }
     unstuck.current = 0;
+    resync();
     setRequest(r);
     actions.current = [];
     preEvents.current = [];
@@ -754,6 +813,10 @@ function BattleView({ room, floor, tr, partner, owners, foe, party, ctrl, theme 
         <div className={`absolute top-[46%] h-[9%] -translate-x-1/2 rounded-[50%] ${double ? "w-[50%] sm:w-[38%]" : "w-[42%] sm:w-[30%]"}`} style={{ left: foeMid.left, background: `radial-gradient(ellipse at center, ${pal.platform[0]}, ${pal.platform[1]} 70%, transparent 72%)` }} />
         <div className={`absolute top-[84%] h-[12%] -translate-x-1/2 rounded-[50%] ${double ? "w-[64%] sm:w-[48%]" : "w-[56%] sm:w-[40%]"}`} style={{ left: myMid.left, background: `radial-gradient(ellipse at center, ${pal.platform[0]}, ${pal.platform[1]} 70%, transparent 72%)` }} />
 
+        {/* Hazards lying on each side */}
+        <Hazards conds={field.sides.p2} style={{ left: foeMid.left, top: "47%" }} small />
+        <Hazards conds={field.sides.p1} style={{ left: myMid.left, top: "86%" }} />
+
         {/* Foe trainers */}
         {trainerOnField !== "gone" && trainers.length > 0 && (
           <div className="absolute flex -translate-x-1/2 -translate-y-[60%] transition-all duration-700" style={{ ...foeMid, transform: `translate(${trainerOnField === "out" ? "60%" : "-50%"}, -60%)`, opacity: trainerOnField === "out" ? 0 : 1 }}>
@@ -764,8 +827,9 @@ function BattleView({ room, floor, tr, partner, owners, foe, party, ctrl, theme 
         {/* Foes */}
         {foes.map((v, pos) => v?.visible && (
           <div key={`p2-${pos}`} className="absolute -translate-x-1/2 -translate-y-1/2" style={at("p2", pos)}>
-            <div key={`${v.slot}-${v.anim}`} className={v.anim}>
-              <PokemonSprite species={v.species} shiny={v.shiny} className={`${foeSize} drop-shadow-[0_8px_6px_rgba(0,0,0,0.35)]`} />
+            <div key={`${v.slot}-${v.anim}`} className={`relative ${v.anim}`}>
+              {v.sub ? <SubstituteDoll className={foeSize} /> : <PokemonSprite species={v.species} shiny={v.shiny} className={`${foeSize} drop-shadow-[0_8px_6px_rgba(0,0,0,0.35)]`} />}
+              {v.confused && <ConfusionDucks />}
             </div>
           </div>
         ))}
@@ -784,8 +848,9 @@ function BattleView({ room, floor, tr, partner, owners, foe, party, ctrl, theme 
         )}
         {mine.map((v, pos) => v?.visible && (
           <div key={`p1-${pos}`} className="absolute -translate-x-1/2 -translate-y-1/2" style={at("p1", pos)}>
-            <div key={`${v.slot}-${v.anim}`} className={v.anim}>
-              <PokemonSprite species={v.species} shiny={v.shiny} back className={`${mySize} drop-shadow-[0_8px_6px_rgba(0,0,0,0.35)]`} />
+            <div key={`${v.slot}-${v.anim}`} className={`relative ${v.anim}`}>
+              {v.sub ? <SubstituteDoll back className={mySize} /> : <PokemonSprite species={v.species} shiny={v.shiny} back className={`${mySize} drop-shadow-[0_8px_6px_rgba(0,0,0,0.35)]`} />}
+              {v.confused && <ConfusionDucks />}
             </div>
           </div>
         ))}
@@ -795,16 +860,21 @@ function BattleView({ room, floor, tr, partner, owners, foe, party, ctrl, theme 
 
         {/* Info boxes */}
         <div className="absolute left-2 top-2 z-10 flex flex-col gap-1 sm:left-6 sm:top-6">
+          <SideChips conds={field.sides.p2} lang={lang} />
           {foes.map((v, pos) => v && (
             <InfoBox key={pos} view={v} name={speciesName(v.species, lang)} compact={double} caught={wild && save.dex.caught.includes(v.species)} {...teamBalls(pos)} />
           ))}
         </div>
         <div className="absolute bottom-2 right-2 z-10 flex flex-col gap-1 sm:bottom-6 sm:right-6">
+          <SideChips conds={field.sides.p1} lang={lang} />
           {mine.map((v, pos) => v && (
             <InfoBox key={pos} view={v} name={partyName(v.slot)} compact={double} player exp={levelProgress(party[v.slot])} active={double && menu !== "none" && menu !== "results" && slotReq?.pos === pos} />
           ))}
         </div>
-        {weather && <div className="absolute left-1/2 top-2 -translate-x-1/2 chip text-white">{t(`spire.weather.${weather}`)}</div>}
+        <div className="absolute left-1/2 top-2 z-10 flex -translate-x-1/2 flex-wrap justify-center gap-1">
+          {weather && <span className="chip text-white">{t(`spire.weather.${weather}`)}{field.weatherTurns ? ` · ${field.weatherTurns}` : ""}</span>}
+          {field.field.map((id) => <span key={id} className="chip text-white">{effectLabel(id, lang)}</span>)}
+        </div>
         <button className="absolute right-2 top-2 chip text-white" onClick={(e) => { e.stopPropagation(); fast.current = !fast.current; }} data-silent>
           <Icon name="play" size={12} />{t("battle.skip")}
         </button>
@@ -892,12 +962,107 @@ function InfoBox({ view, name, player, caught, exp, balls = 0, fainted = 0, comp
         <HpBar hp={view.hp} max={view.maxhp} className="flex-1" />
       </div>
       {player && <div className="mt-0.5 text-right text-xs font-black tabular-nums">{Math.max(0, view.hp)}/{view.maxhp}</div>}
+      <Boosts boosts={view.boosts} />
       {player && exp !== undefined && !compact && <ExpBar ratio={exp} className="mt-0.5" />}
       {balls > 0 && (
         <div className="mt-1 flex gap-0.5">
           {Array.from({ length: balls }, (_, i) => <span key={i} className={i < fainted ? "opacity-30 grayscale" : ""}><PokeBall size={10} /></span>)}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Field indicators
+
+const STAT_SHORT: Record<string, [string, string]> = {
+  atk: ["Atk", "Atq"], def: ["Def", "Déf"], spa: ["SpA", "AtS"], spd: ["SpD", "DéS"], spe: ["Spe", "Vit"], accuracy: ["Acc", "Pré"], evasion: ["Eva", "Esq"],
+};
+
+/** Stat stage as the multiplier it applies (accuracy and evasion use thirds). */
+function stageMultiplier(stat: string, stage: number): string {
+  const base = stat === "accuracy" || stat === "evasion" ? 3 : 2;
+  const m = stage >= 0 ? (base + stage) / base : base / (base - stage);
+  return `×${Number.isInteger(m) ? m : m.toFixed(2).replace(/0$/, "")}`;
+}
+
+function Boosts({ boosts }: { boosts: Record<string, number> }) {
+  const lang = useT().lang;
+  const entries = Object.entries(boosts).filter(([, v]) => v);
+  if (!entries.length) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-0.5">
+      {entries.map(([stat, v]) => (
+        <span key={stat} className={`rounded px-1 text-[10px] font-black leading-4 text-white ${v > 0 ? "bg-emerald-600" : "bg-rose-600"}`}>
+          {(STAT_SHORT[stat] ?? [stat, stat])[lang === "fr" ? 1 : 0]} {stageMultiplier(stat, v)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+const HAZARDS = new Set(["stealthrock", "spikes", "toxicspikes"]);
+
+/** Screens, Tailwind & co. as chips (with turns left); hazards are drawn on the ground. */
+function SideChips({ conds, lang }: { conds: Record<string, number>; lang: "en" | "fr" }) {
+  const list = Object.entries(conds).filter(([id]) => !HAZARDS.has(id));
+  if (!list.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {list.map(([id, n]) => <span key={id} className="chip !py-0 text-[10px] text-white">{effectLabel(id, lang)}{n > 1 ? ` · ${n}` : ""}</span>)}
+    </div>
+  );
+}
+
+/** Stealth Rock, Spikes (by layer) and Toxic Spikes, scattered on a side's platform. */
+function Hazards({ conds, style, small }: { conds: Record<string, number>; style: React.CSSProperties; small?: boolean }) {
+  const rocks = conds.stealthrock ? 4 : 0;
+  const spikes = Math.min(3, conds.spikes ?? 0) * 2;
+  const toxic = Math.min(2, conds.toxicspikes ?? 0) * 2;
+  if (!rocks && !spikes && !toxic) return null;
+  const items: { kind: "rock" | "spike" | "toxic"; x: number; y: number }[] = [];
+  const place = (kind: "rock" | "spike" | "toxic", n: number, row: number) => {
+    for (let i = 0; i < n; i++) items.push({ kind, x: (i + 0.5) / n - 0.5 + row * 0.07, y: row * 0.35 - 0.3 + (i % 2) * 0.3 });
+  };
+  place("rock", rocks, 0);
+  place("spike", spikes, 1);
+  place("toxic", toxic, 2);
+  const w = small ? 200 : 300;
+  return (
+    <div className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style={{ ...style, width: w, height: w * 0.22 }}>
+      {items.map((it, i) => (
+        <svg key={i} viewBox="0 0 10 10" className="absolute" style={{ left: `${50 + it.x * 90}%`, top: `${50 + it.y * 60}%`, width: small ? 16 : 22, height: small ? 16 : 22, transform: "translate(-50%, -50%)" }}>
+          {it.kind === "rock" ? (
+            <path d="M1 9 L3 3 L5 1 L7 4 L9 9 Z" fill="#9a8c7a" stroke="#4a4036" strokeWidth="0.7" />
+          ) : (
+            <path d="M1 9 L5 1 L9 9 Z" fill={it.kind === "toxic" ? "#b45ad8" : "#5a5a66"} stroke={it.kind === "toxic" ? "#5a1a78" : "#202028"} strokeWidth="0.7" />
+          )}
+        </svg>
+      ))}
+    </div>
+  );
+}
+
+/** The Substitute doll in place of the Pokémon. */
+function SubstituteDoll({ back, className }: { back?: boolean; className: string }) {
+  return <img src={`https://play.pokemonshowdown.com/sprites/substitutes/gen5${back ? "-back" : ""}/substitute.png`} alt="" className={`pixel object-contain ${className}`} draggable={false} />;
+}
+
+/** Little ducks circling over a confused Pokémon. */
+function ConfusionDucks() {
+  return (
+    <div className="pointer-events-none absolute left-1/2 top-[8%] h-0 w-0" style={{ transform: "scaleY(0.4)" }}>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="absolute left-0 top-0" style={{ animation: "duck-orbit 1.6s linear infinite", animationDelay: `${(-i * 1.6) / 3}s` }}>
+          <svg viewBox="0 0 12 10" width="24" height="20" style={{ transform: "translate(-50%, -50%) scaleY(2.5)" }}>
+            <ellipse cx="5" cy="6.5" rx="4" ry="3" fill="#ffd84a" stroke="#a07a10" strokeWidth="0.6" />
+            <circle cx="8" cy="3.6" r="2.3" fill="#ffd84a" stroke="#a07a10" strokeWidth="0.6" />
+            <path d="M10 3.4 L12 4 L10 4.6 Z" fill="#ff8a2a" />
+            <circle cx="8.6" cy="3.1" r="0.5" fill="#222" />
+          </svg>
+        </div>
+      ))}
     </div>
   );
 }
