@@ -3,18 +3,29 @@ import OW from "@/data/ow-sprites.json";
 import { useSpriteImage } from "./useEmerald";
 
 /**
- * Overworld sprites. The player walks with Emerald's animated sheets (no other generation has
- * full walking sheets to hand); trainers and NPCs stand with their Black 2 / White 2 sprite
- * (older generations when B2W2 has none), fetched once into public/ow by
- * scripts/fetch-ow-sprites.mjs.
+ * Overworld sprites. Black 2 / White 2 walking sheets (4 directions × 4 frames) come from the
+ * Essentials BW kit for Nate, Rosa and the following Pokémon; other heroes walk with Emerald's
+ * sheets. Trainers and NPCs stand with their B2W2 sprite (older generations when B2W2 has
+ * none), fetched once into public/ow by scripts/fetch-ow-sprites.mjs.
  */
 
 export type Dir = "up" | "down" | "left" | "right";
 
 const FEMALE_AVATARS = new Set(["hilda", "rosa", "dawn", "lyra", "may"]);
 
-/** The player's walking sprite for an avatar. */
-export const playerPic = (avatar: string) => (FEMALE_AVATARS.has(avatar) ? "people/may/walking" : "people/brendan/walking");
+/** Essentials BW's character sheets (RPG Maker layout: rows down, left, right, up). */
+const BW_SHEETS = "https://raw.githubusercontent.com/Eronan/Essentials-BW/master/Graphics/Characters";
+const HERO_SHEETS: Record<string, string> = { nate: "trchar000", rosa: "trchar001" };
+
+/**
+ * The player's walking sprite for an avatar: a B2W2 sheet URL when there is one, else an
+ * Emerald picture (Brendan or May).
+ */
+export const playerPic = (avatar: string) =>
+  HERO_SHEETS[avatar] ? `${BW_SHEETS}/${HERO_SHEETS[avatar]}.png` : FEMALE_AVATARS.has(avatar) ? "people/may/walking" : "people/brendan/walking";
+
+/** A Pokémon's walking sheet (national dex number, shiny variant). */
+export const pokemonSheet = (num: number, shiny: boolean) => `${BW_SHEETS}/${String(num).padStart(3, "0")}${shiny ? "s" : ""}.png`;
 
 /** A standing sprite: a B2W2-style single frame (public/ow) or an Emerald sheet. */
 export type Look = { od: string } | { pic: string };
@@ -44,6 +55,34 @@ const WALK: Record<Dir, [number, number]> = { down: [3, 4], up: [5, 6], left: [7
  * `step` 0 stands; 1 and 2 alternate while walking. Facing right mirrors the left frames.
  */
 export const Walker = memo(function Walker({ pic, dir, step, T }: { pic: string; dir: Dir; step: number; T: number }) {
+  if (pic.startsWith("http")) return <Sheet url={pic} dir={dir} step={step} T={T} />;
+  return <EmeraldWalker pic={pic} dir={dir} step={step} T={T} />;
+});
+
+const SHEET_ROW: Record<Dir, number> = { down: 0, left: 1, right: 2, up: 3 };
+const SHEET_COL = [0, 1, 3];
+
+/**
+ * An RPG Maker style 4×4 sheet (64-pixel cells drawn two cells wide, feet on the cell), as
+ * Essentials BW ships them.
+ */
+export const Sheet = memo(function Sheet({ url, dir, step, T, onError }: { url: string; dir: Dir; step: number; T: number; onError?: () => void }) {
+  const size = T * 2;
+  return (
+    <div className="pixel overflow-hidden" style={{ width: size, height: size, marginLeft: -T / 2, imageRendering: "pixelated" }}>
+      <img
+        src={url}
+        alt=""
+        draggable={false}
+        onError={onError}
+        className="max-w-none"
+        style={{ width: size * 4, height: size * 4, imageRendering: "pixelated", transform: `translate(${-SHEET_COL[step] * size}px, ${-SHEET_ROW[dir] * size}px)` }}
+      />
+    </div>
+  );
+});
+
+const EmeraldWalker = memo(function EmeraldWalker({ pic, dir, step, T }: { pic: string; dir: Dir; step: number; T: number }) {
   const img = useSpriteImage(pic);
   if (!img) return null;
   const scale = T / 16;

@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { PokemonIcon } from "@/ui/sprites";
-import { Walker } from "./Walker";
+import { spriteNum } from "@/core/dex";
+import { Sheet, Walker, pokemonSheet } from "./Walker";
 import type { Dir } from "./Walker";
 import type { WorldMap } from "./useEmerald";
 import { Pad, useTouchControls } from "./Pad";
@@ -331,10 +332,8 @@ export function World({ mapKey, map, entities, spawn, pic, follower, filter, pau
           </div>
         ))}
         {follower && (trail.x !== pos.x || trail.y !== pos.y) && (
-          <div className="pointer-events-none absolute grid place-items-end justify-center" style={{ ...glide, left: trail.x * T - T * 0.1, top: trail.y * T - T * 0.25, width: T * 1.2, height: T * 1.2, zIndex: (trail.y + 1) * 10 }}>
-            <div className={step ? "animate-bob" : ""} style={{ transform: moveDir === "right" ? "scaleX(-1)" : undefined, filter: "drop-shadow(0 2px 1px rgba(0,0,0,0.35))" }}>
-              <PokemonIcon species={follower.species} size={T * 1.2} />
-            </div>
+          <div className="pointer-events-none absolute" style={{ ...glide, left: trail.x * T, top: trail.y * T - T, width: T, zIndex: (trail.y + 1) * 10 }}>
+            <Follower species={follower.species} shiny={follower.shiny} dir={moveDir} step={step} T={T} />
           </div>
         )}
         <div className="pointer-events-none absolute" style={{ ...glide, left: pos.x * T, top: pos.y * T - T, width: T, zIndex: (pos.y + 1) * 10 + 5 }}>
@@ -351,4 +350,19 @@ export function World({ mapKey, map, entities, spawn, pic, follower, filter, pau
       {children}
     </div>
   );
+}
+
+/** The lead Pokémon walking behind: its overworld sheet (Gen 1–5), else its menu icon. */
+function Follower({ species, shiny, dir, step, T }: { species: string; shiny: boolean; dir: Dir; step: number; T: number }) {
+  const num = spriteNum(species);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [species, shiny]);
+  if (failed || num > 649) {
+    return (
+      <div className="absolute grid place-items-end justify-center" style={{ left: -T * 0.1, top: T * 0.75, width: T * 1.2, height: T * 1.2 }}>
+        <div style={{ transform: dir === "right" ? "scaleX(-1)" : undefined }}><PokemonIcon species={species} size={T * 1.2} /></div>
+      </div>
+    );
+  }
+  return <Sheet url={pokemonSheet(num, shiny)} dir={dir} step={step} T={T} onError={() => setFailed(true)} />;
 }
