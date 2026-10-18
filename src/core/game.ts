@@ -41,6 +41,17 @@ export function claimRoom(save: SaveData, n: number, roomId: string): void {
   if (!f.claimed.includes(roomId)) f.claimed.push(roomId);
 }
 
+/** A room whose content is gone (treasure taken, Pokémon caught, merchant visited): it's just a passage now. */
+export function isEmptyRoom(save: SaveData, room: Room, n: number): boolean {
+  return isClaimed(save, room, n) && (room.kind === "item" || room.kind === "wild" || room.kind === "legend" || room.kind === "merchant");
+}
+
+/** Walks through an empty room to the next step, so a step whose doors are all spent never blocks the climb. */
+export function passRoom(save: SaveData, roomId: string): void {
+  enterRoom(save, roomId);
+  completeRoom(save);
+}
+
 export function healParty(save: SaveData): void {
   for (const p of save.party) healFully(p);
 }

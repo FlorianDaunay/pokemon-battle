@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useGame, useSave } from "@/store/game";
-import { buy, claimRoom, clearFloor, completeRoom, earn, endRun, enterRoom, getFloor, isClaimed, restRoom } from "@/core/game";
+import { buy, claimRoom, clearFloor, completeRoom, earn, endRun, enterRoom, getFloor, isEmptyRoom, passRoom, restRoom } from "@/core/game";
 import { addItem } from "@/core/save";
 import { STEPS_PER_FLOOR } from "@/core/spire/floor";
 import type { Room, RoomKind } from "@/core/spire/floor";
@@ -50,6 +50,10 @@ export function SpireScreen() {
 
   const choose = (room: Room) => {
     sfx("door");
+    if (isEmptyRoom(save, room, run.floor)) {
+      update((d) => passRoom(d, room.id));
+      return;
+    }
     update((d) => enterRoom(d, room.id));
     if (room.kind === "trainer" || room.kind === "boss" || room.kind === "wild" || room.kind === "legend") {
       startBattle({ room, floor: run.floor });
@@ -110,7 +114,7 @@ export function SpireScreen() {
               <p className="mb-3 text-center font-black text-white text-shadow">{run.step === STEPS_PER_FLOOR ? t("spire.kindDesc.boss") : t("spire.choose")}</p>
               <div className="mx-auto flex max-w-4xl flex-wrap items-stretch justify-center gap-3">
                 {stepRooms.map((room, i) => (
-                  <Door key={room.id} room={room} index={i} claimed={isClaimed(save, room, run.floor)} onChoose={() => choose(room)} />
+                  <Door key={room.id} room={room} index={i} empty={isEmptyRoom(save, room, run.floor)} onChoose={() => choose(room)} />
                 ))}
               </div>
             </>
@@ -141,16 +145,14 @@ export function SpireScreen() {
   );
 }
 
-function Door({ room, index, claimed, onChoose }: { room: Room; index: number; claimed: boolean; onChoose: () => void }) {
+function Door({ room, index, empty, onChoose }: { room: Room; index: number; empty: boolean; onChoose: () => void }) {
   const t = useT();
   const style = KIND_STYLE[room.kind];
   const tr = room.trainer ? trainer(room.trainer) : null;
-  const empty = claimed && (room.kind === "item" || room.kind === "wild" || room.kind === "legend" || room.kind === "merchant");
   return (
     <button
-      disabled={empty}
       onClick={onChoose}
-      className="group relative flex w-[150px] flex-col items-center overflow-hidden rounded-t-[80px] rounded-b-card border-2 bg-gradient-to-b from-black/50 to-black/75 p-3 pt-6 text-white backdrop-blur-sm transition hover:-translate-y-1 disabled:opacity-40 sm:w-[190px] animate-slide-up"
+      className={`group relative flex w-[150px] flex-col items-center overflow-hidden rounded-t-[80px] rounded-b-card border-2 bg-gradient-to-b from-black/50 to-black/75 p-3 pt-6 text-white backdrop-blur-sm transition hover:-translate-y-1 sm:w-[190px] animate-slide-up ${empty ? "opacity-60" : ""}`}
       style={{ borderColor: style.color, ["--glow" as string]: style.glow, animation: `slide-up 0.4s ${index * 80}ms both, door-glow 2.6s ease-in-out infinite` }}
     >
       <div className="absolute inset-x-0 top-0 h-24 opacity-40" style={{ background: `radial-gradient(closest-side, ${style.color}, transparent)` }} />
@@ -171,7 +173,7 @@ function Door({ room, index, claimed, onChoose }: { room: Room; index: number; c
       </div>
       <div className="relative mt-2 text-sm font-black" style={{ color: style.color }}>{t(`spire.kind.${room.kind}`)}</div>
       {tr && <div className="relative text-xs font-bold">{trainerName(tr, t.lang)} <span className="text-white/60">· {t(`trainerClass.${tr.cls}`)}</span></div>}
-      <div className="relative mt-1 text-center text-[11px] leading-snug text-white/75">{empty ? t(room.kind === "item" ? "spire.claimed" : "spire.caughtHere") : t(`spire.kindDesc.${room.kind}`)}</div>
+      <div className="relative mt-1 text-center text-[11px] leading-snug text-white/75">{empty ? `${t(room.kind === "item" ? "spire.claimed" : "spire.caughtHere")} ${t("spire.passThrough")}` : t(`spire.kindDesc.${room.kind}`)}</div>
       <div className="relative mt-2 flex items-center gap-1 text-[10px] font-bold text-white/70">
         {room.kind !== "item" && room.kind !== "rest" && room.kind !== "merchant" && <span>{t("common.lv")}{room.level}</span>}
         {room.weather && <span className="chip !py-0 !text-[10px]">{t(`spire.weather.${room.weather}`)}</span>}
