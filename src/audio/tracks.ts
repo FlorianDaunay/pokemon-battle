@@ -436,8 +436,177 @@ export const evolutionLoop: Track = {
   ],
 };
 
+// =============================================================================================
+// Orchestral themes: strings ostinatos, brass melodies, choir, timpani and martial snare.
+
+// ---------------------------------------------------------------------------------------------
+// Legendary encounter — D minor, 152 bpm
+
+const LEG: Chart = [
+  "d3 f3 a3", "b-2 d3 f3", "c3 e3 g3", "a2 c3 e3", "d3 f3 a3", "b-2 d3 f3", "g2 b-2 d3", "a2 c+3 e3",
+  "b-2 d3 f3", "f2 a2 c3", "c3 e3 g3", "d3 f3 a3", "g2 b-2 d3", "e-3 g3 b-3", "a2 c+3 e3", "a2 c+3 e3",
+];
+
+export const battleLegend: Track = {
+  bpm: 152,
+  parts: [
+    {
+      inst: "brass",
+      mml: `o4 d4 a4 o5 d4 f4
+        o5 e4. d8 c+2
+        o5 d4 f4 a4 o6 d4
+        o6 c+2. r4 |
+        o5 a4. f8 d4 a4
+        o5 b-4 a8 g8 f4 d4
+        o5 e4. g8 o6 c4 o5 e4
+        o5 e2 c4 e4
+        o5 f4. a8 o6 d4 f4
+        o6 f4 e8 d8 o5 b-4 o6 d4
+        o6 d4. c8 o5 b-4 g4
+        o5 a2. c+4
+        o5 d4 f4 b-4 o6 d4
+        o6 c2 o5 a4 f4
+        o5 g4. a8 b-4 o6 c4
+        o6 d2. o5 a4
+        o5 b-4. o6 c8 d4 g4
+        o6 g4 f8 e-8 o5 b-4 o6 e-4
+        o6 c+4. d8 e4 a4
+        o6 a2 e4 c+4`,
+    },
+    { inst: "strings", vol: 0.75, mml: `${pad(["d3 f3 a3", "d3 f3 a3", "b-2 d3 f3", "a2 c+3 e3"])} | ${arp(LEG, "16", "updown")}` },
+    { inst: "pad", vol: 0.55, pan: -0.2, mml: `${rest(4)} | ${pad(LEG)}` },
+    { inst: "flute", vol: 0.45, pan: 0.3, mml: `${rest(4)} | ${rest(8)} ${arp(LEG.slice(8), "8", "up")}` },
+    { inst: "bass", mml: `${bass(["d2", "d2", "b-1", "a1"], "half")} | ${bass(LEG, "pump")}` },
+    { inst: "timpani", vol: 0.9, mml: `o2 [d16]16 d4 r4 a4 r4 o2 d4 r4 d4 r4 o1 a8 a8 a8 a8 a4 a4 | [o2 d4 r2. o1 a4 r2.]8` },
+    { inst: "kick", vol: 0.8, mml: `${rest(3)} s16 s16 s16 s16 s16 s16 s16 s16 x4 x4 | ${drums(16, "march")}` },
+  ],
+};
+
+// ---------------------------------------------------------------------------------------------
+// Elite Four — G minor, 166 bpm
+
+const E4: Chart = [
+  "g2 b-2 d3", "e-3 g3 b-3", "f3 a3 c4", "d3 f+3 a3", "g2 b-2 d3", "e-3 g3 b-3", "c3 e-3 g3", "d3 f+3 a3",
+  "e-3 g3 b-3", "b-2 d3 f3", "f3 a3 c4", "g2 b-2 d3", "c3 e-3 g3", "g2 b-2 d3", "d3 f+3 a3", "d3 f+3 a3",
+];
+
+export const battleElite: Track = {
+  bpm: 166,
+  parts: [
+    {
+      inst: "brass",
+      mml: `o4 l16 g a b- o5 c d e- f f+ g a b- o6 c d e- f f+
+        o6 g4 r4 d4 r4 |
+        o5 g4 b-8 o6 d8 g4 f4
+        o6 e-4. d8 c4 o5 b-4
+        o5 a4 f8 a8 o6 c4 f4
+        o6 f+2 d4 o5 a4
+        o5 b-4. o6 c8 d4 g4
+        o6 g4 f8 e-8 d4 e-4
+        o6 e-4. d8 c4 g4
+        o6 f+2. r4
+        o6 g4. a8 b-4 g4
+        o6 f4 d8 f8 b-4 f4
+        o6 a4. g8 f4 c4
+        o6 d2 o5 b-4 g4
+        o5 c4 e-8 g8 o6 c4 e-4
+        o6 d4. c8 o5 b-4 g4
+        o5 a4 o6 d4 f+4 a4
+        o6 a2 f+4 d4`,
+    },
+    { inst: "strings", vol: 0.75, mml: `${pad(["g2 b-2 d3", "d3 f+3 a3"])} | ${arp(E4, "16", "up")}` },
+    { inst: "pad", vol: 0.5, pan: 0.2, mml: `${rest(2)} | ${pad(E4)}` },
+    { inst: "lead2", vol: 0.45, pan: -0.3, mml: `${rest(2)} | ${stabs(E4, "x..x..x.")}` },
+    { inst: "bass", mml: `${bass(["g2", "d2"], "oct")} | ${bass(E4, "gallop")}` },
+    { inst: "timpani", vol: 0.85, mml: `o2 [g16]16 g4 r4 d4 r4 | [o2 g4 r4 g4 r4 o2 d4 r4 d4 r4]8` },
+    { inst: "kick", mml: `s16 s16 s16 s16 s16 s16 s16 s16 s8 s8 s8 s8 x4 r4 x4 r4 | ${drums(16, "drive")}` },
+  ],
+};
+
+// ---------------------------------------------------------------------------------------------
+// Double and tag battles — B minor, 174 bpm
+
+const DUO: Chart = [
+  "b2 d3 f+3", "g2 b2 d3", "a2 c+3 e3", "f+2 a+2 c+3", "b2 d3 f+3", "g2 b2 d3", "e2 g2 b2", "f+2 a+2 c+3",
+  "g2 b2 d3", "d3 f+3 a3", "a2 c+3 e3", "b2 d3 f+3", "e2 g2 b2", "g2 b2 d3", "f+2 a+2 c+3", "f+2 a+2 c+3",
+];
+
+export const battleDouble: Track = {
+  bpm: 174,
+  parts: [
+    {
+      inst: "lead",
+      mml: `o5 l8 b b r b r b a b
+        o6 d4 c+4 o5 b4 a+4 |
+        o5 f+4. b8 o6 d4 c+8 o5 b8
+        o5 g4. b8 o6 d4 o5 b4
+        o5 a4 c+8 e8 a4 g4
+        o5 f+2 a+4 o6 c+4
+        o6 d4. c+8 o5 b4 f+4
+        o5 g4 a8 b8 o6 d4 g4
+        o6 f+4. e8 d4 o5 b4
+        o5 a+2. r4
+        o5 b4. o6 d8 g4 d4
+        o6 f+4 e8 d8 a4 f+4
+        o6 e4. d8 c+4 o5 a4
+        o5 b2 o6 d4 f+4
+        o6 g4. f+8 e4 b4
+        o6 b4 a8 g8 d4 g4
+        o6 f+4 c+4 e4 a+4
+        o6 f+2 e4 c+4`,
+    },
+    { inst: "brass", vol: 0.85, pan: -0.25, mml: `${stabs(["b2 d3 f+3", "f+2 a+2 c+3"], "x.x.x.x.")} | ${stabs(DUO, "x..x..x.")}` },
+    { inst: "strings", vol: 0.7, mml: `${pad(["b2 d3 f+3", "f+2 a+2 c+3"])} | ${arp(DUO, "16", "updown")}` },
+    { inst: "bass", mml: `${bass(["b1", "f+1"], "oct")} | ${bass(DUO, "gallop")}` },
+    { inst: "timpani", vol: 0.8, mml: `o1 b4 r4 b4 r4 o1 f+8 f+8 f+8 f+8 f+4 f+4 | ${rest(16)}` },
+    { inst: "kick", mml: `${rest(1)} s16 s16 s16 s16 s16 s16 s16 s16 x4 x4 | ${drums(16, "drive")}` },
+    { inst: "hat", vol: 0.55, mml: `${rest(2)} | ${hats(16)}` },
+  ],
+};
+
+// ---------------------------------------------------------------------------------------------
+// The Apex — E-flat major, 104 bpm (exploration, broad horns)
+
+const APEX: Chart = [
+  "e-3 g3 b-3", "b-2 d3 f3", "c3 e-3 g3", "a-2 c3 e-3", "e-3 g3 b-3", "b-2 d3 f3", "a-2 c3 e-3", "b-2 d3 f3",
+  "c3 e-3 g3", "g2 b-2 d3", "a-2 c3 e-3", "e-3 g3 b-3", "f3 a-3 c4", "b-2 d3 f3", "e-3 g3 b-3", "b-2 d3 f3",
+];
+
+export const spireApex: Track = {
+  bpm: 104,
+  parts: [
+    {
+      inst: "brass",
+      mml: `${rest(2)} |
+        o5 e-2 g4 b-4
+        o5 b-4. a-8 g4 f4
+        o5 g2 e-4 c4
+        o5 c2. e-4
+        o5 b-2 o6 e-4 g4
+        o6 f4. e-8 d4 o5 b-4
+        o6 c4. o5 b-8 a-4 o6 c4
+        o5 b-1
+        o5 g4. a-8 b-4 o6 c4
+        o6 d2 o5 b-4 g4
+        o6 c4. o5 b-8 a-4 e-4
+        o5 g2. b-4
+        o6 c4. d8 e-4 f4
+        o6 d2 f4 d4
+        o6 e-2. g4
+        o6 f2 d4 o5 b-4`,
+    },
+    { inst: "bell", vol: 0.5, pan: 0.3, mml: `o6 e-4 g4 b-4 o7 e-4 d2 o6 b-2 | [o6 b-2 r2 r1]8` },
+    { inst: "strings", vol: 0.7, mml: `${pad(["e-3 g3 b-3", "b-2 d3 f3"])} | ${pad(APEX)}` },
+    { inst: "flute", vol: 0.4, pan: -0.3, mml: `${rest(2)} | ${rest(8)} ${arp(APEX.slice(8), "8", "up")}` },
+    { inst: "bass", mml: `${bass(["e-2", "b-1"], "half")} | ${bass(APEX, "half")}` },
+    { inst: "timpani", vol: 0.6, mml: `o2 e-1 o1 b-1 | [o2 e-4 r2.]16` },
+    { inst: "kick", vol: 0.7, mml: `${rest(2)} | ${drums(16, "half")}` },
+  ],
+};
+
 export const TRACKS = {
-  title, camp, spireBright, spireDark, spireHigh, battleWild, battleTrainer, battleBoss, battleChampion, victory, evolutionLoop,
+  title, camp, spireBright, spireDark, spireHigh, spireApex, battleWild, battleTrainer, battleBoss, battleChampion,
+  battleLegend, battleElite, battleDouble, victory, evolutionLoop,
 } satisfies Record<string, Track>;
 
 export type TrackId = keyof typeof TRACKS;

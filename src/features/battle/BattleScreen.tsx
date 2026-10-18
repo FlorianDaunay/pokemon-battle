@@ -80,12 +80,13 @@ const SPOTS: Record<Side, { x: number; y: number }[][]> = {
   p2: [[{ x: 0.72, y: 0.36 }], [{ x: 0.61, y: 0.37 }, { x: 0.83, y: 0.34 }]],
 };
 
-function trackFor(kind: string, tr: TrainerDef | null): TrackId {
-  if (kind === "legend") return "battleChampion";
+function trackFor(kind: string, tr: TrainerDef | null, double: boolean): TrackId {
+  if (kind === "legend") return "battleLegend";
   if (!tr) return "battleWild";
   if (tr.cls === "champion" || tr.cls === "legend") return "battleChampion";
-  if (kind === "boss" || tr.cls === "boss" || tr.cls === "elite") return "battleBoss";
-  return "battleTrainer";
+  if (tr.cls === "elite") return "battleElite";
+  if (kind === "boss" || tr.cls === "boss") return "battleBoss";
+  return double ? "battleDouble" : "battleTrainer";
 }
 
 function aiFor(floor: number, kind: string): AiLevel {
@@ -203,7 +204,7 @@ function BattleView({ room, floor, tr, partner, owners, foe, party, ctrl, theme 
 
   // Music
   useEffect(() => {
-    const id = trackFor(room.kind, tr);
+    const id = trackFor(room.kind, tr, !!room.double);
     music.play(id, TRACKS[id], 0.2);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

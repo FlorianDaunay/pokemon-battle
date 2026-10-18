@@ -4,6 +4,7 @@ import { music } from "@/audio/sequencer";
 import { TRACKS } from "@/audio/tracks";
 import type { TrackId } from "@/audio/tracks";
 import { themeForFloor } from "@/core/spire/floor";
+import { LAST_MAIN_FLOOR } from "@/core/spire/themes";
 import type { Biome } from "@/core/spire/themes";
 
 const DARK_BIOMES = new Set<Biome>(["cave", "hideout", "tower", "shadow", "marsh", "space", "abyss", "frigate", "volcano"]);
@@ -12,6 +13,7 @@ const HIGH_BIOMES = new Set<Biome>(["league", "summit", "den"]);
 /** The track for exploring a floor. */
 export function spireTrack(floor: number, seed: number): TrackId {
   const biome = themeForFloor(floor, seed).biome;
+  if (floor > LAST_MAIN_FLOOR) return "spireApex";
   if (floor > 20 || HIGH_BIOMES.has(biome)) return "spireHigh";
   return DARK_BIOMES.has(biome) ? "spireDark" : "spireBright";
 }
