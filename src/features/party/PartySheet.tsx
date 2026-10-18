@@ -16,20 +16,28 @@ export function PartySheet({ onClose }: { onClose: () => void }) {
   const [naming, setNaming] = useState(false);
   const p = save.party.find((x) => x.uid === sel) ?? save.party[0];
   const idx = save.party.findIndex((x) => x.uid === p?.uid);
+  const swap = (a: number, b: number) => update((d) => void ([d.party[a], d.party[b]] = [d.party[b], d.party[a]]));
 
   return (
     <Sheet title={t("lobby.team")} onClose={onClose} wide>
       <div className="grid gap-3 md:grid-cols-[260px_1fr]">
         <div className="flex flex-col gap-1.5">
-          {save.party.map((m) => (
-            <button key={m.uid} className={`flex items-center gap-2 rounded-tile border-2 p-1.5 text-left ${m.uid === p?.uid ? "border-accent bg-accent/10" : "border-transparent bg-canvas/40 hover:bg-surface-hover"}`} onClick={() => setSel(m.uid)}>
-              <PokemonSprite species={m.species} shiny={m.shiny} size={44} />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1 truncate text-sm font-black">{m.nickname || speciesName(m.species, t.lang)}<span className="text-xs text-text-muted">{t("common.lv")}{m.level}</span></div>
-                <HpBar hp={m.hp} max={maxHp(m)} />
-                <div className="flex items-center gap-1"><StatusBadge status={m.hp <= 0 ? "fnt" : m.status} />{m.item && <ItemIcon id={m.item} size={18} />}</div>
+          {save.party.map((m, i) => (
+            <div key={m.uid} className={`flex items-center gap-1 rounded-tile border-2 p-1 ${m.uid === p?.uid ? "border-accent bg-accent/10" : "border-transparent bg-canvas/40"}`}>
+              <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setSel(m.uid)}>
+                <PokemonSprite species={m.species} shiny={m.shiny} size={44} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1 truncate text-sm font-black">{m.nickname || speciesName(m.species, t.lang)}<span className="text-xs text-text-muted">{t("common.lv")}{m.level}</span></div>
+                  <HpBar hp={m.hp} max={maxHp(m)} />
+                  <div className="flex items-center gap-1"><StatusBadge status={m.hp <= 0 ? "fnt" : m.status} />{m.item && <ItemIcon id={m.item} size={18} />}</div>
+                </div>
+              </button>
+              {/* Reorder in place: the first one leads in battle. */}
+              <div className="flex flex-col gap-0.5">
+                <button className="btn btn-ghost btn-sm !px-1.5 !py-0.5" disabled={i === 0} aria-label={t("summary.moveUp")} onClick={() => swap(i, i - 1)}><Icon name="up" size={14} /></button>
+                <button className="btn btn-ghost btn-sm !px-1.5 !py-0.5" disabled={i === save.party.length - 1} aria-label={t("summary.moveDown")} onClick={() => swap(i, i + 1)}><Icon name="down" size={14} /></button>
               </div>
-            </button>
+            </div>
           ))}
         </div>
         {p && (

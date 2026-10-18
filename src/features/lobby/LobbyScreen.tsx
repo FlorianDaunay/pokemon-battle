@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useGame, useSave } from "@/store/game";
 import type { Overlay } from "@/store/game";
-import { startRun, startableFloors } from "@/core/game";
+import { healParty, startRun, startableFloors } from "@/core/game";
 import { QUESTS, questReady } from "@/core/quests";
 import { LAST_MAIN_FLOOR } from "@/core/spire/themes";
 import { themeForFloor, floorLevel } from "@/core/spire/floor";
@@ -11,16 +11,17 @@ import { Particles } from "@/fx/Particles";
 import { Icon } from "@/ui/Icon";
 import { HpBar, PokemonSprite } from "@/ui/sprites";
 import { Modal, MoneyChip } from "@/ui/layout";
-import { maxHp } from "@/core/pokemon";
-import { sfx } from "@/audio/sfx";
+import { maxHp, maxPp } from "@/core/pokemon";
+import { jingles, sfx } from "@/audio/sfx";
 import { avatarUrl } from "@/features/title/NewGameScreen";
 import { World } from "@/features/world/World";
 import type { WorldEntity } from "@/features/world/World";
 import { Marker, Person } from "@/features/world/props";
-import { playerPic } from "@/features/world/Walker";
+import { lookOf, playerPic } from "@/features/world/Walker";
 import { useWorldMap } from "@/features/world/useEmerald";
 import { CAMP } from "@/features/world/camp";
 import { WorldLoading } from "@/features/world/WorldLoading";
+import { useTouchControls } from "@/features/world/Pad";
 
 // The camp: the Spire (Battle Tower) at the top of the avenue, services on either side.
 const SPAWN = { ...CAMP.spawn, dir: "down" as const };
@@ -33,6 +34,8 @@ export function LobbyScreen() {
   const update = useGame((s) => s.update);
   const go = useGame((s) => s.go);
   const quit = useGame((s) => s.quit);
+  const toast = useGame((s) => s.toast);
+  const touch = useTouchControls();
   const [picking, setPicking] = useState(false);
   const ready = QUESTS.filter((q) => questReady(save, q)).length;
   const floors = startableFloors(save);
@@ -46,6 +49,12 @@ export function LobbyScreen() {
 
   const station = (id: Exclude<Overlay, null>) => () => {
     sfx("select");
+    // The Pokémon Center looks after the team before opening the boxes.
+    if (id === "pc" && save.party.some((p) => p.hp < maxHp(p) || p.status || p.moves.some((m) => m.pp < maxPp(m)))) {
+      jingles.heal();
+      update((d) => healParty(d));
+      toast("lobby.healed", undefined, "heart");
+    }
     open(id);
   };
 
@@ -60,7 +69,7 @@ export function LobbyScreen() {
       door("mart", CAMP.mart, t("lobby.mart")),
       door("quests", CAMP.quests, t("lobby.quests"), ready || undefined),
       door("trophies", CAMP.trophies, t("lobby.trophies")),
-      { id: "journal", ...CAMP.journal, onUse: station("journal"), render: (T) => <Person T={T} pic="people/prof_birch" label={t("lobby.journal")} /> },
+      { id: "journal", ...CAMP.journal, onUse: station("journal"), render: (T) => <Person T={T} look={lookOf("professor")} label={t("lobby.journal")} /> },
     ];
   }, [t, ready, floors.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -104,7 +113,7 @@ export function LobbyScreen() {
           ))}
         </button>
       </div>
-      <div className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[11px] font-bold text-white/80 text-shadow safe-pad">{t("world.hint")}</div>
+      {!touch && <div className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[11px] font-bold text-white/80 text-shadow safe-pad">{t("world.hint")}</div>}
 
       {picking && (
         <Modal onClose={() => setPicking(false)}>

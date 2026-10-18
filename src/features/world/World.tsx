@@ -4,6 +4,7 @@ import { PokemonIcon } from "@/ui/sprites";
 import { Walker } from "./Walker";
 import type { Dir } from "./Walker";
 import type { WorldMap } from "./useEmerald";
+import { Pad, useTouchControls } from "./Pad";
 
 /**
  * A real Emerald map the player walks on: arrow keys / WASD / ZQSD, or tap a spot to walk
@@ -43,6 +44,8 @@ export interface WorldProps {
   /** The player's overworld sprite (an Emerald object-event picture). */
   pic: string;
   follower?: { species: string; shiny: boolean };
+  /** A CSS filter over the map (themed rooms). */
+  filter?: string;
   /** Stops input while a menu or dialog is open. */
   paused?: boolean;
   /** The entity the player faces (or stands on, or right under), e.g. to describe a door. */
@@ -63,9 +66,10 @@ const KEYS: Record<string, Dir> = {
 const inside = (e: WorldEntity, x: number, y: number) => x >= e.x && x < e.x + (e.w ?? 1) && y >= e.y && y < e.y + (e.h ?? 1);
 const dirTo = (from: Cell, to: Cell): Dir => (to.x > from.x ? "right" : to.x < from.x ? "left" : to.y > from.y ? "down" : "up");
 
-export function World({ mapKey, map, entities, spawn, pic, follower, paused, onFocus, onStep, children }: WorldProps) {
+export function World({ mapKey, map, entities, spawn, pic, follower, filter, paused, onFocus, onStep, children }: WorldProps) {
   const H = map.height;
   const W = map.width;
+  const touch = useTouchControls();
   const boxRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ w: 800, h: 600 });
@@ -215,6 +219,18 @@ export function World({ mapKey, map, entities, spawn, pic, follower, paused, onF
     e?.onUse?.();
   };
 
+  const press = (d: Dir) => {
+    if (pausedRef.current) return;
+    path.current = [];
+    arrival.current = null;
+    if (!held.current.includes(d)) {
+      held.current.push(d);
+      // Respond at once; the clock keeps walking while it's held.
+      if (Date.now() - lastMove.current > STEP_MS * 0.6) tryMove(d);
+    }
+  };
+  const release = (d: Dir) => void (held.current = held.current.filter((x) => x !== d));
+
   // Keyboard
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -222,13 +238,7 @@ export function World({ mapKey, map, entities, spawn, pic, follower, paused, onF
       const d = KEYS[e.key];
       if (d) {
         e.preventDefault();
-        path.current = [];
-        arrival.current = null;
-        if (!held.current.includes(d)) {
-          held.current.push(d);
-          // Respond at once; the clock keeps walking while the key is held.
-          if (Date.now() - lastMove.current > STEP_MS * 0.6) tryMove(d);
-        }
+        press(d);
       } else if (e.key === " " || e.key === "Enter" || e.key === "e" || e.key === "E") {
         if ((e.target as HTMLElement | null)?.closest("button")) return;
         e.preventDefault();
@@ -237,7 +247,7 @@ export function World({ mapKey, map, entities, spawn, pic, follower, paused, onF
     };
     const up = (e: KeyboardEvent) => {
       const d = KEYS[e.key];
-      if (d) held.current = held.current.filter((x) => x !== d);
+      if (d) release(d);
     };
     const blur = () => void (held.current = []);
     window.addEventListener("keydown", down);
@@ -262,7 +272,8 @@ export function World({ mapKey, map, entities, spawn, pic, follower, paused, onF
   // Whole pixels per Emerald pixel when possible, so the art stays crisp.
   const T = Math.max(32, Math.min(64, Math.floor(Math.min(view.w / 10, view.h / 9) / 8) * 8));
   const tap = (ev: React.PointerEvent) => {
-    if (pausedRef.current || !mapRef.current) return;
+    // Touch screens use the pad.
+    if (touch || pausedRef.current || !mapRef.current) return;
     const r = mapRef.current.getBoundingClientRect();
     const x = Math.floor((ev.clientX - r.left) / T);
     const y = Math.floor((ev.clientY - r.top) / T);
@@ -313,7 +324,7 @@ export function World({ mapKey, map, entities, spawn, pic, follower, paused, onF
   return (
     <div ref={boxRef} className="absolute inset-0 touch-none select-none overflow-hidden" onPointerDown={tap}>
       <div ref={mapRef} data-cols={W} className="absolute left-0 top-0" style={{ width: W * T, height: H * T, transform: `translate(${ox}px, ${oy}px)`, transition: `transform ${STEP_MS}ms linear` }}>
-        <img src={map.below} alt="" draggable={false} className="pixel absolute left-0 top-0 max-w-none" style={{ width: W * T, height: H * T, imageRendering: "pixelated" }} />
+        <img src={map.below} alt="" draggable={false} className="pixel absolute left-0 top-0 max-w-none" style={{ width: W * T, height: H * T, imageRendering: "pixelated", filter }} />
         {entities.filter((e) => !e.above).map((e) => (
           <div key={e.id} className="absolute" style={{ left: e.x * T, top: e.y * T, width: (e.w ?? 1) * T, height: (e.h ?? 1) * T, zIndex: (e.y + (e.h ?? 1)) * 10 }}>
             {e.render?.(T)}
@@ -329,13 +340,14 @@ export function World({ mapKey, map, entities, spawn, pic, follower, paused, onF
         <div className="pointer-events-none absolute" style={{ ...glide, left: pos.x * T, top: pos.y * T - T, width: T, zIndex: (pos.y + 1) * 10 + 5 }}>
           <Walker pic={pic} dir={dir} step={step} T={T} />
         </div>
-        <img src={map.above} alt="" draggable={false} className="pixel pointer-events-none absolute left-0 top-0 max-w-none" style={{ width: W * T, height: H * T, imageRendering: "pixelated", zIndex: 800 }} />
+        <img src={map.above} alt="" draggable={false} className="pixel pointer-events-none absolute left-0 top-0 max-w-none" style={{ width: W * T, height: H * T, imageRendering: "pixelated", zIndex: 800, filter }} />
         {entities.filter((e) => e.above).map((e) => (
           <div key={e.id} className="pointer-events-none absolute" style={{ left: e.x * T, top: e.y * T, width: (e.w ?? 1) * T, height: (e.h ?? 1) * T, zIndex: 900 }}>
             {e.render?.(T)}
           </div>
         ))}
       </div>
+      {touch && !paused && <Pad onPress={press} onRelease={release} onAction={useInFront} />}
       {children}
     </div>
   );

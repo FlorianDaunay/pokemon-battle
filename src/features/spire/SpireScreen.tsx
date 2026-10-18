@@ -19,10 +19,14 @@ import { useSettings } from "@/store/settings";
 import { World } from "@/features/world/World";
 import type { Cell, WorldEntity } from "@/features/world/World";
 import type { Dir } from "@/features/world/Walker";
-import { playerPic, trainerPic } from "@/features/world/Walker";
+import { lookOf, playerPic } from "@/features/world/Walker";
 import { Bubble, Glow, ItemBall, Marker, Person, Tag } from "@/features/world/props";
-import { MB_TALL_GRASS, preloadWorld, useWorldMap } from "@/features/world/useEmerald";
+import { preloadWorld, useWorldMap } from "@/features/world/useEmerald";
+import { ARENA, ARENAS, CHAMBER, CLEARING, HALL_DOOR_Y, PIKE_ROOM, hallDoors, hallMid, hallPlace, wildRoom } from "@/features/world/spireMaps";
+import type { Place } from "@/features/world/spireMaps";
+import { dex } from "@/core/dex";
 import { WorldLoading } from "@/features/world/WorldLoading";
+import { PAD_SPACE, useTouchControls } from "@/features/world/Pad";
 
 const KIND_STYLE: Record<RoomKind, { icon: string; glow: string; color: string }> = {
   trainer: { icon: "team", glow: "rgb(255 120 90 / 0.5)", color: "#ff8a6a" },
@@ -34,13 +38,8 @@ const KIND_STYLE: Record<RoomKind, { icon: string; glow: string; color: string }
   boss: { icon: "skull", glow: "rgb(255 80 80 / 0.6)", color: "#ff6060" },
 };
 
-// The real Emerald maps the Spire is made of (Battle Pike rooms, a route, the Elite Four's rooms).
-const HALL = { layout: "BattleFrontier_BattlePikeThreePathRoom", curtains: [2, 6, 10], doorY: 3, spawn: { x: 6, y: 9 }, exit: { x: 6, y: 10 } };
-const ROOM = { layout: "BattleFrontier_BattlePikeRoomNormal", spot: { x: 4, y: 4 }, way: { x: 4, y: 3 }, spawn: { x: 4, y: 6 }, exit: { x: 4, y: 7 } };
-const MEADOW = { layout: "Route101", spot: { x: 13, y: 11 }, spawn: { x: 10, y: 17 }, exit: { x: 10, y: 18 } };
-const ARENAS = ["EverGrandeCity_SidneysRoom", "EverGrandeCity_PhoebesRoom", "EverGrandeCity_GlaciasRoom", "EverGrandeCity_DrakesRoom"];
-const ARENA = { spot: { x: 6, y: 5 }, spawn: { x: 6, y: 12 }, exit: { x: 6, y: 13 } };
-const curtainsFor = (n: number) => (n === 1 ? [6] : n === 2 ? [2, 10] : [2, 6, 10]);
+const doorsOf = (step: Room[] | undefined) => Math.max(1, Math.min(3, step?.length ?? 1));
+const done0 = (step: number) => step > STEPS_PER_FLOOR;
 
 const roomLabel = (room: Room) => (room.partner ? "tag" : room.double ? "double" : room.kind);
 
@@ -59,7 +58,7 @@ export function SpireScreen() {
   useEffect(() => {
     if (!run) go("lobby");
   }, [run, go]);
-  useEffect(() => preloadWorld([HALL.layout, ROOM.layout, MEADOW.layout, ...ARENAS]), []);
+  useEffect(() => preloadWorld(["hall-1", "hall-2", "hall-3", PIKE_ROOM.map, CHAMBER.map, CLEARING.map, ...ARENAS]), []);
   // A new step starts at the entrance.
   useEffect(() => setHallSpawn(null), [run?.step, run?.floor]);
   if (!run || !floor) return null;
@@ -74,7 +73,7 @@ export function SpireScreen() {
   const leave = (doorX: number) => {
     sfx("door");
     update((d) => leaveRoom(d));
-    setHallSpawn({ x: doorX, y: HALL.doorY + 1, dir: "down" });
+    setHallSpawn({ x: doorX, y: HALL_DOOR_Y + 1, dir: "down" });
   };
 
   return (
@@ -135,15 +134,18 @@ export function SpireScreen() {
 // The hall: one curtain per door
 
 function HallView({ floor, step, rooms, spawn, pic, follower, paused, onRetreat }: { floor: Floor; step: number; rooms: Room[]; spawn: (Cell & { dir: Dir }) | null; pic: string; follower?: { species: string; shiny: boolean }; paused: boolean; onRetreat: () => void }) {
+  const touch = useTouchControls();
   const t = useT();
   const save = useSave();
   const update = useGame((s) => s.update);
-  const { map, error, retry } = useWorldMap(HALL.layout);
+  const doors = done0(step) ? 1 : doorsOf(rooms);
+  const place = hallPlace(doors);
+  const { map, error, retry } = useWorldMap(place.map);
   const [focus, setFocus] = useState<string | null>(null);
   const [cleared, setCleared] = useState(false);
   const floorN = floor.n;
-  const done = step > STEPS_PER_FLOOR;
-  const xs = done ? [6] : curtainsFor(rooms.length);
+  const done = done0(step);
+  const xs = hallDoors(doors);
 
   const choose = (room: Room) => {
     sfx("door");
@@ -154,24 +156,22 @@ function HallView({ floor, step, rooms, spawn, pic, follower, paused, onRetreat 
 
   const entities = useMemo<WorldEntity[]>(() => {
     const out: WorldEntity[] = [
-      { id: "down", x: HALL.exit.x, y: HALL.exit.y, solid: false, onUse: onRetreat, render: (T) => <Marker T={T} label={t("world.stairsDown")} top={0.75} /> },
+      { id: "down", ...place.exit, solid: false, onUse: onRetreat, render: (T) => <Marker T={T} label={t("world.stairsDown")} top={0.75} /> },
     ];
-    // Curtains with nothing behind stay shut.
-    for (const x of HALL.curtains) if (!xs.includes(x)) out.push({ id: `shut-${x}`, x, y: HALL.doorY });
     if (done) {
-      out.push({ id: "up", x: 6, y: HALL.doorY, solid: false, onUse: () => { sfx("door"); setCleared(true); } });
-      out.push({ id: "up-mark", x: 6, y: HALL.doorY, ghost: true, above: true, render: (T) => <Marker T={T} label={t("world.stairsUp")} color="#ffd779" glow="rgba(255,215,120,0.7)" /> });
+      out.push({ id: "up", x: xs[0], y: HALL_DOOR_Y, solid: false, onUse: () => { sfx("door"); setCleared(true); } });
+      out.push({ id: "up-mark", x: xs[0], y: HALL_DOOR_Y, ghost: true, above: true, render: (T) => <Marker T={T} label={t("world.stairsUp")} color="#ffd779" glow="rgba(255,215,120,0.7)" /> });
       return out;
     }
     rooms.forEach((room, i) => {
       const style = KIND_STYLE[room.kind];
       const empty = isEmptyRoom(save, room, floorN);
-      out.push({ id: room.id, x: xs[i], y: HALL.doorY, solid: false, approach: true, onUse: () => choose(room) });
+      out.push({ id: room.id, x: xs[i], y: HALL_DOOR_Y, solid: false, approach: true, onUse: () => choose(room) });
       // What waits behind, shown over the curtain (above the map's top layer).
       out.push({
         id: `${room.id}-preview`,
         x: xs[i],
-        y: HALL.doorY,
+        y: HALL_DOOR_Y,
         ghost: true,
         above: true,
         render: (T) => (
@@ -189,13 +189,13 @@ function HallView({ floor, step, rooms, spawn, pic, follower, paused, onRetreat 
   }, [rooms, done, save.floors, floorN, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const focused = rooms.find((r) => r.id === focus);
-  const start = spawn ?? { ...HALL.spawn, dir: "up" as const };
+  const start = spawn ?? { ...place.spawn, dir: "up" as const };
   if (!map) return <WorldLoading error={error} onRetry={retry} />;
 
   return (
     <>
       <World
-        mapKey={`hall-${floorN}-${step}-${spawn ? `${spawn.x}` : "s"}`}
+        mapKey={`hall-${floorN}-${step}-${doors}-${spawn ? `${spawn.x}` : "s"}`}
         map={map}
         entities={entities}
         spawn={start}
@@ -204,7 +204,7 @@ function HallView({ floor, step, rooms, spawn, pic, follower, paused, onRetreat 
         paused={paused || cleared}
         onFocus={setFocus}
       />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-1 p-2 safe-pad">
+      <div style={{ bottom: touch ? PAD_SPACE : 0 }} className="pointer-events-none absolute inset-x-0 flex flex-col items-center gap-1 p-2 safe-pad">
         {focused ? (
           <DoorCard room={focused} floorN={floorN} onEnter={() => choose(focused)} />
         ) : (
@@ -273,6 +273,7 @@ function DoorCard({ room, floorN, onEnter }: { room: Room; floorN: number; onEnt
 // Inside a room
 
 function RoomView({ room, floor, pic, follower, paused, onLeave }: { room: Room; floor: Floor; pic: string; follower?: { species: string; shiny: boolean }; paused: boolean; onLeave: (doorX: number) => void }) {
+  const touch = useTouchControls();
   const t = useT();
   const save = useSave();
   const update = useGame((s) => s.update);
@@ -284,13 +285,13 @@ function RoomView({ room, floor, pic, follower, paused, onLeave }: { room: Room;
   const empty = isEmptyRoom(save, room, floorN);
   const wild = (room.kind === "wild" || room.kind === "legend") && !empty;
   const boss = room.kind === "boss";
-  const place = wild ? MEADOW : boss ? ARENA : ROOM;
-  const layout = wild ? MEADOW.layout : boss ? ARENAS[floorN % ARENAS.length] : ROOM.layout;
+  const themed = wild ? wildRoom(dex.species.get(room.species!).types[0]) : null;
+  const place: Place = themed ? themed.place : boss ? { ...ARENA, map: ARENAS[floorN % ARENAS.length] } : PIKE_ROOM;
+  const layout = place.map;
   const { map, error, retry } = useWorldMap(layout);
   const doorX = (() => {
-    const s = floor.steps.findIndex((st) => st.some((r) => r.id === room.id));
-    const xs = curtainsFor(floor.steps[s]?.length ?? 1);
-    return xs[floor.steps[s]?.findIndex((r) => r.id === room.id) ?? 0] ?? HALL.spawn.x;
+    const st = floor.steps.find((s) => s.some((r) => r.id === room.id));
+    return hallDoors(doorsOf(st))[st?.findIndex((r) => r.id === room.id) ?? 0] ?? hallMid(doorsOf(st));
   })();
 
   const battle = () => {
@@ -304,8 +305,7 @@ function RoomView({ room, floor, pic, follower, paused, onLeave }: { room: Room;
   // Trainers spot you once you come close; wild Pokémon jump out of the tall grass.
   const spotted = (at: Cell) => {
     if (empty || !map) return;
-    if ((room.kind === "trainer" && at.y <= ROOM.spot.y + 1) || (boss && at.y <= ARENA.spot.y + 2)) battle();
-    if (wild && map.behavior[at.y * map.width + at.x] === MB_TALL_GRASS) battle();
+    if ((room.kind === "trainer" && at.y <= place.spot.y + 1) || (boss && at.y <= place.spot.y + 2) || (wild && at.y <= place.spot.y + 2)) battle();
   };
 
   const finishRoom = () => {
@@ -318,7 +318,7 @@ function RoomView({ room, floor, pic, follower, paused, onLeave }: { room: Room;
       { id: "entrance", x: place.exit.x, y: place.exit.y, solid: false, onUse: () => onLeave(doorX), render: (T) => <Marker T={T} label={t("world.back")} top={0.75} /> },
     ];
     if (empty) {
-      out.push({ id: "exit", x: ROOM.way.x, y: ROOM.way.y, solid: false, onUse: () => { sfx("door"); update((d) => completeRoom(d)); }, render: (T) => <Marker T={T} label={t("world.exit")} color="#ffd779" glow="rgba(255,215,120,0.7)" /> });
+      out.push({ id: "exit", ...place.way, solid: false, onUse: () => { sfx("door"); update((d) => completeRoom(d)); }, render: (T) => <Marker T={T} label={t("world.exit")} color="#ffd779" glow="rgba(255,215,120,0.7)" /> });
       return out;
     }
     const spot = place.spot;
@@ -328,11 +328,15 @@ function RoomView({ room, floor, pic, follower, paused, onLeave }: { room: Room;
     switch (room.kind) {
       case "boss":
       case "trainer": {
-        const who = [tr, partner].filter((x): x is NonNullable<typeof x> => !!x);
+        // Tate & Liza are one echo but two people.
+        const who = [tr, partner].filter((x): x is NonNullable<typeof x> => !!x).map((x) => ({ look: lookOf(x.id), name: trainerName(x, t.lang) }));
+        if (tr?.id === "tateandliza") who.splice(0, 1, { look: lookOf("tateandliza"), name: "" }, { look: lookOf("liza"), name: "" });
         const xs = who.length > 1 ? [spot.x - 1, spot.x + 1] : [spot.x];
+        const names = [tr, partner].filter(Boolean).map((x) => trainerName(x!, t.lang)).join(" & ");
         who.forEach((x, i) => {
-          out.push({ id: `tr-${i}`, x: xs[i], y: spot.y, onUse: battle, render: (T) => <Person T={T} pic={trainerPic(x.id, x.cls)} label={trainerName(x, t.lang)} labelColor={color} badge={alert ? "!" : undefined} /> });
+          out.push({ id: `tr-${i}`, x: xs[i], y: spot.y, onUse: battle, render: (T) => <Person T={T} look={x.look} label={x.name || undefined} labelColor={color} badge={alert ? "!" : undefined} /> });
         });
+        if (who.some((x) => !x.name)) out.push({ id: "names", x: spot.x, y: spot.y, ghost: true, render: (T) => <Tag T={T} top={-1.42} color={color}>{names}</Tag> });
         break;
       }
       case "wild":
@@ -343,10 +347,13 @@ function RoomView({ room, floor, pic, follower, paused, onLeave }: { room: Room;
           y: spot.y,
           onUse: battle,
           render: (T) => (
-            <div className="absolute inset-0 grid place-items-end justify-center">
+            <div className="absolute inset-0">
               {room.kind === "legend" && <Glow color="rgba(255,255,255,0.7)" />}
-              <div className="animate-bob"><PokemonIcon species={room.species!} size={T * 1.4} /></div>
-              {alert && <Bubble T={T}>!</Bubble>}
+              {/* The Black & White sprite, standing on its cell. */}
+              <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -T * 0.15 }}>
+                <PokemonSprite species={room.species!} shiny={room.shiny} size={T * 2.3} className="max-w-none" />
+              </div>
+              {alert && <Bubble T={T} top={-1.6}>!</Bubble>}
             </div>
           ),
         });
@@ -355,10 +362,10 @@ function RoomView({ room, floor, pic, follower, paused, onLeave }: { room: Room;
         out.push({ id: "ball", x: spot.x, y: spot.y, onUse: () => { sfx("click"); setPanel("item"); }, render: (T) => <><Glow /><ItemBall T={T} /></> });
         break;
       case "rest":
-        out.push({ id: "nurse", x: spot.x, y: spot.y, onUse: () => setPanel("rest"), render: (T) => <Person T={T} pic="people/nurse" label={t("spire.kind.rest")} labelColor={color} /> });
+        out.push({ id: "nurse", x: spot.x, y: spot.y, onUse: () => setPanel("rest"), render: (T) => <Person T={T} look={lookOf("nurse")} label={t("spire.kind.rest")} labelColor={color} /> });
         break;
       case "merchant":
-        out.push({ id: "merchant", x: spot.x, y: spot.y, onUse: () => setPanel("merchant"), render: (T) => <Person T={T} pic="people/mart_employee" label={t("spire.kind.merchant")} labelColor={color} /> });
+        out.push({ id: "merchant", x: spot.x, y: spot.y, onUse: () => setPanel("merchant"), render: (T) => <Person T={T} look={lookOf("clerk")} label={t("spire.kind.merchant")} labelColor={color} /> });
         break;
     }
     return out;
@@ -370,6 +377,7 @@ function RoomView({ room, floor, pic, follower, paused, onLeave }: { room: Room;
       <World
         mapKey={`room-${room.id}-${layout}`}
         map={map}
+        filter={themed?.filter}
         entities={entities}
         spawn={{ ...place.spawn, dir: "up" }}
         pic={pic}
@@ -377,7 +385,7 @@ function RoomView({ room, floor, pic, follower, paused, onLeave }: { room: Room;
         paused={paused || !!panel || alert}
         onStep={spotted}
       />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-2 safe-pad">
+      <div style={{ bottom: touch ? PAD_SPACE : 0 }} className="pointer-events-none absolute inset-x-0 flex justify-center p-2 safe-pad">
         <div className="rounded-pill bg-black/60 px-3 py-1 text-center text-xs font-black text-white text-shadow">
           {empty ? emptyText(t, room) : t(`spire.kindDesc.${roomLabel(room)}`)}
         </div>

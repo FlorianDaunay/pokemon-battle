@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { Walker } from "./Walker";
-import type { Dir } from "./Walker";
+import { Standing } from "./Walker";
+import type { Look } from "./Walker";
 import { useSpriteImage } from "./useEmerald";
 
 /** Labels and markers drawn over the real maps. */
@@ -24,12 +24,10 @@ export function Bubble({ T, children, top = -0.75 }: { T: number; children: Reac
 }
 
 /** A character standing on a cell (feet on it, two cells tall), with an optional name. */
-export function Person({ T, pic, dir = "down", label, labelColor, badge }: { T: number; pic: string; dir?: Dir; label?: string; labelColor?: string; badge?: ReactNode }) {
+export function Person({ T, look, label, labelColor, badge }: { T: number; look: Look; label?: string; labelColor?: string; badge?: ReactNode }) {
   return (
     <div className="absolute inset-0">
-      <div className="absolute left-0" style={{ top: -T }}>
-        <Walker pic={pic} dir={dir} step={0} T={T} />
-      </div>
+      <Standing look={look} T={T} />
       {label && <Tag T={T} top={-1.42} color={labelColor}>{label}</Tag>}
       {badge ? <Bubble T={T} top={-1.75}>{badge}</Bubble> : null}
     </div>

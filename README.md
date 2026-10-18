@@ -51,4 +51,4 @@ src/themes/    token-based UI theme system
 
 ## Credits
 
-Fan-made, non-commercial. Pokémon © Nintendo / Creatures / GAME FREAK. Battle engine: Pokémon Showdown (MIT) via `@pkmn`. Sprites and cries are loaded at runtime from [PokeAPI](https://github.com/PokeAPI). Trainer sprites come from Pokémon Showdown. Overworld maps and sprites are read at runtime from the [pret/pokeemerald](https://github.com/pret/pokeemerald) decompilation. The music is original.
+Fan-made, non-commercial. Pokémon © Nintendo / Creatures / GAME FREAK. Battle engine: Pokémon Showdown (MIT) via `@pkmn`. Sprites and cries are loaded at runtime from [PokeAPI](https://github.com/PokeAPI). Trainer sprites come from Pokémon Showdown. Overworld maps and the player's walking sprites are read at runtime from the [pret/pokeemerald](https://github.com/pret/pokeemerald) decompilation. Trainer and NPC overworld sprites (Black 2 / White 2, older generations as a fallback) come from the [Bulbagarden Archives](https://archives.bulbagarden.net) and are stored in `public/ow` (`node scripts/fetch-ow-sprites.mjs` refreshes them). The music is original.

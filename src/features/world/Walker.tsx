@@ -1,7 +1,13 @@
 import { memo } from "react";
+import OW from "@/data/ow-sprites.json";
 import { useSpriteImage } from "./useEmerald";
 
-/** Real Emerald overworld sprites for the player, NPCs and trainer echoes. */
+/**
+ * Overworld sprites. The player walks with Emerald's animated sheets (no other generation has
+ * full walking sheets to hand); trainers and NPCs stand with their Black 2 / White 2 sprite
+ * (older generations when B2W2 has none), fetched once into public/ow by
+ * scripts/fetch-ow-sprites.mjs.
+ */
 
 export type Dir = "up" | "down" | "left" | "right";
 
@@ -10,35 +16,23 @@ const FEMALE_AVATARS = new Set(["hilda", "rosa", "dawn", "lyra", "may"]);
 /** The player's walking sprite for an avatar. */
 export const playerPic = (avatar: string) => (FEMALE_AVATARS.has(avatar) ? "people/may/walking" : "people/brendan/walking");
 
-const OWN: Record<string, string> = {
-  roxanne: "people/gym_leaders/roxanne", brawly: "people/gym_leaders/brawly", wattson: "people/gym_leaders/wattson",
-  flannery: "people/gym_leaders/flannery", norman: "people/gym_leaders/norman", winona: "people/gym_leaders/winona",
-  tateandliza: "people/gym_leaders/tate", juan: "people/gym_leaders/juan", sidney: "people/elite_four/sidney",
-  phoebe: "people/elite_four/phoebe", glacia: "people/elite_four/glacia", drake: "people/elite_four/drake",
-  steven: "people/steven", wallace: "people/wallace", maxie: "people/team_magma/maxie", archie: "people/team_aqua/archie",
-  tabitha: "people/team_magma/magma_member_m", courtney: "people/team_magma/magma_member_f",
-  matt: "people/team_aqua/aqua_member_m", shelly: "people/team_aqua/aqua_member_f", red: "people/red",
+/** A standing sprite: a B2W2-style single frame (public/ow) or an Emerald sheet. */
+export type Look = { od: string } | { pic: string };
+
+const HAS_OD = new Set(Object.keys(OW));
+const odUrl = (id: string) => `${import.meta.env.BASE_URL}ow/${id}.png`;
+
+// Hoenn's teams look best in their own Emerald sprites.
+const EMERALD_LOOKS: Record<string, string> = {
+  maxie: "people/team_magma/maxie", tabitha: "people/team_magma/magma_member_m", courtney: "people/team_magma/magma_member_f",
+  archie: "people/team_aqua/archie", matt: "people/team_aqua/aqua_member_m", shelly: "people/team_aqua/aqua_member_f",
 };
 
-const FEMALE = new Set([
-  "misty", "erika", "sabrina", "lorelei", "agatha", "ariana", "whitney", "jasmine", "clair", "karen", "janine", "gardenia",
-  "maylene", "fantina", "candice", "bertha", "cynthia", "mars", "jupiter", "lenora", "elesa", "skyla", "roxie", "iris",
-  "shauntal", "caitlin",
-]);
-
-const BY_CLASS: Record<string, [string, string]> = {
-  gym: ["people/black_belt", "people/beauty"],
-  elite: ["people/expert_m", "people/expert_f"],
-  champion: ["people/gentleman", "people/beauty"],
-  admin: ["people/team_magma/magma_member_m", "people/team_magma/magma_member_f"],
-  boss: ["people/scientist_2", "people/hex_maniac"],
-  rival: ["people/youngster", "people/lass"],
-  legend: ["people/psychic_m", "people/hex_maniac"],
-};
-
-/** The overworld sprite of a trainer echo: their own when Emerald has one, else a look-alike. */
-export function trainerPic(id: string, cls: string): string {
-  return OWN[id] ?? (BY_CLASS[cls] ?? BY_CLASS.gym)[FEMALE.has(id) ? 1 : 0];
+/** How a trainer echo or NPC (by id: a trainer, "nurse", "clerk", "professor"…) looks standing. */
+export function lookOf(id: string): Look {
+  if (EMERALD_LOOKS[id]) return { pic: EMERALD_LOOKS[id] };
+  if (HAS_OD.has(id)) return { od: odUrl(id) };
+  return { pic: "people/youngster" };
 }
 
 // Emerald walking sheets: face down, up, left; then two steps each for down, up, left.
@@ -70,3 +64,15 @@ export const Walker = memo(function Walker({ pic, dir, step, T }: { pic: string;
     />
   );
 });
+
+/** A standing character, feet on its cell: B2W2 frames are 32×32 (two cells), Emerald 16×32. */
+export function Standing({ look, T }: { look: Look; T: number }) {
+  if ("od" in look) {
+    return <img src={look.od} alt="" draggable={false} className="pixel absolute max-w-none" style={{ left: -T / 2, top: -T, width: T * 2, height: T * 2, imageRendering: "pixelated" }} />;
+  }
+  return (
+    <div className="absolute left-0" style={{ top: -T }}>
+      <Walker pic={look.pic} dir="down" step={0} T={T} />
+    </div>
+  );
+}
