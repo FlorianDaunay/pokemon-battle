@@ -19,11 +19,11 @@ import type { WorldEntity } from "@/features/world/World";
 import { Marker, Person } from "@/features/world/props";
 import { playerPic } from "@/features/world/Walker";
 import { useWorldMap } from "@/features/world/useEmerald";
+import { CAMP } from "@/features/world/camp";
 import { WorldLoading } from "@/features/world/WorldLoading";
 
-// The camp is Fallarbor Town: its doors and signs lead to the camp's services, the road east to the Spire.
-const CAMP = "FallarborTown";
-const SPAWN = { x: 10, y: 9, dir: "down" as const };
+// The camp: the Spire (Battle Tower) at the top of the avenue, services on either side.
+const SPAWN = { ...CAMP.spawn, dir: "down" as const };
 
 export function LobbyScreen() {
   const t = useT();
@@ -49,29 +49,18 @@ export function LobbyScreen() {
     open(id);
   };
 
-  const { map, error, retry } = useWorldMap(CAMP);
+  const { map, error, retry } = useWorldMap("camp");
   const entities = useMemo<WorldEntity[]>(() => {
-    const door = (id: Exclude<Overlay, null>, x: number, y: number, label: string, badge?: number): WorldEntity => ({ id, x, y, onUse: station(id), render: (T) => <Marker T={T} label={label} badge={badge} /> });
-    const spire: WorldEntity[] = [6, 7, 8, 9, 10].map((y) => ({
-      id: `spire-${y}`,
-      x: 19,
-      y,
-      solid: false,
-      onUse: () => (floors.length > 1 ? setPicking(true) : enter(floors[0])),
-      render: y === 8 ? (T) => <Marker T={T} label={`${t("lobby.spire")} →`} color="#ffd779" glow="rgba(255,215,120,0.6)" /> : undefined,
-    }));
+    const door = (id: Exclude<Overlay, null>, at: { x: number; y: number }, label: string, badge?: number): WorldEntity => ({ id, ...at, onUse: station(id), render: (T) => <Marker T={T} label={label} badge={badge} /> });
     return [
-      door("mart", 15, 15, t("lobby.mart")),
-      door("pc", 14, 7, t("lobby.pc")),
-      door("tutor", 1, 6, t("lobby.tutor")),
-      door("dojo", 8, 7, t("lobby.dojo")),
-      door("quests", 10, 11, t("lobby.quests"), ready || undefined),
-      door("trophies", 6, 8, t("lobby.trophies")),
-      { id: "journal", x: 4, y: 12, onUse: station("journal"), render: (T) => <Person T={T} pic="people/prof_birch" label={t("lobby.journal")} /> },
-      { id: "girl", x: 8, y: 11, render: (T) => <Person T={T} pic="people/girl_1" /> },
-      { id: "expert", x: 12, y: 9, render: (T) => <Person T={T} pic="people/expert_m" dir="left" /> },
-      { id: "gentleman", x: 11, y: 15, render: (T) => <Person T={T} pic="people/gentleman" /> },
-      ...spire,
+      { id: "spire", ...CAMP.door, onUse: () => (floors.length > 1 ? setPicking(true) : enter(floors[0])), render: (T) => <Marker T={T} label={t("lobby.spire")} color="#ffd779" glow="rgba(255,215,120,0.6)" /> },
+      door("tutor", CAMP.tutor, t("lobby.tutor")),
+      door("dojo", CAMP.dojo, t("lobby.dojo")),
+      door("pc", CAMP.pc, t("lobby.pc")),
+      door("mart", CAMP.mart, t("lobby.mart")),
+      door("quests", CAMP.quests, t("lobby.quests"), ready || undefined),
+      door("trophies", CAMP.trophies, t("lobby.trophies")),
+      { id: "journal", ...CAMP.journal, onUse: station("journal"), render: (T) => <Person T={T} pic="people/prof_birch" label={t("lobby.journal")} /> },
     ];
   }, [t, ready, floors.length]); // eslint-disable-line react-hooks/exhaustive-deps
 

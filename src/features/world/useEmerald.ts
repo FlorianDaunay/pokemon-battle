@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { EMERALD, loadMapEvents, loadSprite, renderLayout } from "./emerald";
 import type { Io, MapEvents, RenderedMap } from "./emerald";
+import { buildCamp } from "./camp";
 
 /** Browser side: fetch from GitHub (HTTP-cached), inflate with the native stream. */
 async function fetchBytes(path: string): Promise<Uint8Array> {
@@ -40,10 +41,15 @@ export const MB_TALL_GRASS = 0x02;
 
 const maps = new Map<string, Promise<WorldMap>>();
 
-/** A real Emerald map as two images (under / over the player) plus its collisions. */
-export function loadWorldMap(layout: string, edit?: (cells: Uint16Array, w: number, h: number) => void, key = layout): Promise<WorldMap> {
+/** Maps built by the game rather than read as they are. */
+const BUILT: Record<string, (io: Io) => Promise<RenderedMap>> = { camp: buildCamp };
+
+/** A real Emerald map (a layout name, or a built one) as two images plus its collisions. */
+export function loadWorldMap(layout: string): Promise<WorldMap> {
+  const key = layout;
   if (!maps.has(key)) {
-    maps.set(key, renderLayout(browserIo, layout, edit).then((m: RenderedMap) => ({
+    const render = BUILT[layout] ? BUILT[layout](browserIo) : renderLayout(browserIo, layout);
+    maps.set(key, render.then((m: RenderedMap) => ({
       width: m.width,
       height: m.height,
       blocked: m.blocked,

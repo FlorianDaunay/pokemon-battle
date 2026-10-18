@@ -202,25 +202,38 @@ function blit(dst: Uint8ClampedArray, dstW: number, dx: number, dy: number, ts: 
  * metatile id in bits 0–9, collision in bits 10–11), to draw variations of a real room.
  */
 export async function renderLayout(io: Io, name: string, edit?: (cells: Uint16Array, width: number, height: number) => void): Promise<RenderedMap> {
+  const { info, cells } = await loadBlocks(io, name);
+  const copy = cells.slice();
+  edit?.(copy, info.width, info.height);
+  return renderCells(io, name, info.width, info.height, copy);
+}
+
+/** A layout's cells (u16 each: metatile id in bits 0–9, collision in bits 10–11). */
+export async function loadBlocks(io: Io, name: string): Promise<{ info: LayoutInfo; cells: Uint16Array }> {
   const layouts = await loadLayouts(io);
   const info = layouts[name];
   if (!info) throw new Error(`Unknown layout ${name}`);
-  const [primary, secondary, block] = await Promise.all([
+  const block = await once(`blk:${info.blockdata}`, () => io.bytes(info.blockdata));
+  return { info, cells: u16s(block).slice(0, info.width * info.height) };
+}
+
+/** Draws cells of any size with the tilesets of `tilesFrom` (a layout name). */
+export async function renderCells(io: Io, tilesFrom: string, width: number, height: number, cells: Uint16Array): Promise<RenderedMap> {
+  const info = (await loadLayouts(io))[tilesFrom];
+  if (!info) throw new Error(`Unknown layout ${tilesFrom}`);
+  const [primary, secondary] = await Promise.all([
     loadTileset(io, tilesetPath(info.primary, true)),
     loadTileset(io, tilesetPath(info.secondary, false)),
-    once(`blk:${info.blockdata}`, () => io.bytes(info.blockdata)),
   ]);
-  const cells = u16s(block).slice(0, info.width * info.height);
-  edit?.(cells, info.width, info.height);
   const palettes = [...primary.palettes.slice(0, 6), ...secondary.palettes.slice(6, 13)];
-  const W = info.width * 16;
-  const below = new Uint8ClampedArray(W * info.height * 16 * 4);
-  const above = new Uint8ClampedArray(W * info.height * 16 * 4);
+  const W = width * 16;
+  const below = new Uint8ClampedArray(W * height * 16 * 4);
+  const above = new Uint8ClampedArray(W * height * 16 * 4);
   const blocked: boolean[] = [];
   const behavior: number[] = [];
-  for (let cy = 0; cy < info.height; cy++) {
-    for (let cx = 0; cx < info.width; cx++) {
-      const cell = cells[cy * info.width + cx];
+  for (let cy = 0; cy < height; cy++) {
+    for (let cx = 0; cx < width; cx++) {
+      const cell = cells[cy * width + cx];
       const id = cell & 0x3ff;
       blocked.push(((cell >> 10) & 3) !== 0);
       const set = id < PRIMARY_METATILES ? primary : secondary;
@@ -241,7 +254,36 @@ export async function renderLayout(io: Io, name: string, edit?: (cells: Uint16Ar
       }
     }
   }
-  return { width: info.width, height: info.height, below, above, blocked, behavior };
+  return { width, height, below, above, blocked, behavior };
+}
+
+/**
+ * Builds a new map out of pieces of a real one: `fill` a cell everywhere, then copy rectangles.
+ * Coordinates are cells; `from` is in the source layout, `to` in the new map.
+ */
+export interface Stamp {
+  from: [number, number, number, number];
+  to: [number, number];
+}
+
+export async function composeMap(io: Io, source: string, width: number, height: number, fill: [number, number] | [number, number][], stamps: Stamp[]): Promise<RenderedMap> {
+  const { info, cells: src } = await loadBlocks(io, source);
+  const at = (x: number, y: number) => src[y * info.width + x];
+  const out = new Uint16Array(width * height);
+  // A fill can be a repeating pattern (several cells, tiled in a row).
+  const pattern = (Array.isArray(fill[0]) ? fill : [fill]) as [number, number][];
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const [fx, fy] = pattern[(x + y * 2) % pattern.length];
+    out[y * width + x] = at(fx, fy);
+  }
+  for (const { from: [sx, sy, w, h], to: [dx, dy] } of stamps) {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const tx = dx + x, ty = dy + y;
+      if (tx < 0 || ty < 0 || tx >= width || ty >= height) continue;
+      out[ty * width + tx] = at(sx + x, sy + y);
+    }
+  }
+  return renderCells(io, source, width, height, out);
 }
 
 export interface MapEvents {
