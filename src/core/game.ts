@@ -77,6 +77,11 @@ export function enterRoom(save: SaveData, roomId: string): void {
   save.run.current = roomId;
 }
 
+/** Walks back out of a room without doing anything there. */
+export function leaveRoom(save: SaveData): void {
+  if (save.run) save.run.current = null;
+}
+
 /** Marks the current room done and moves to the next step. */
 export function completeRoom(save: SaveData): void {
   const run = save.run;

@@ -8,6 +8,8 @@ A tower has risen from the sea off Undella Town. Inside, its floors rebuild them
 
 - **Gen 5 battle rules** from the [Pokémon Showdown](https://github.com/smogon/pokemon-showdown) simulator (`@pkmn/sim`): every move, ability, held item and weather effect.
 - **649 Pokémon** (Gen 1–5), shown with their animated Black/White sprites.
+- **Walk around.** Brendan or May, with your lead Pokémon following, explore the camp (Fallarbor Town) and the Spire's halls and rooms, all real Pokémon Emerald maps (arrow keys / WASD / ZQSD, or tap where to go). Trainers spot you when you come close; wild Pokémon jump out of the tall grass.
+- **Double and tag battles.** From floor 5, some trainers fight double battles; from floor 8, two trainers can team up, each with their own Pokémon and their own side of the field.
 - **The Spire.** 30 themed floors (forest, caves, Rocket Hideout, Magma Caldera, Frost Hollow, the Elite halls, Silver Peak…), then the endless *Apex*. Each floor has five steps of doors (a trainer echo, a wild Pokémon, treasure, a rest spot, a merchant, or sometimes a legendary), and its guardian waits at the top.
 - **Progression that carries over.** Floors come from a seed stored in your save, so when you return to a floor, the same trainers are there, with the same shinies.
 - **Strategic late game.** Trainer AI gets sharper as you climb. Late echoes field competitive sets (natures, EVs, items). You can shape your own team at the Move Tutor and Training Dojo, and with mints, bottle caps and ability capsules.
@@ -42,10 +44,11 @@ src/core/      pure game logic (no React): dex, Pokémon, items, save, quests
 src/audio/     WebAudio engine, synth instruments, MML sequencer, compositions
 src/fx/        particles (weather & ambience), painted scenery
 src/features/  screens: title, lobby, spire, battle, menus
+  world/       overworld: Emerald map/sprite decoder, walking
 src/i18n/      UI strings (EN/FR) and data names
 src/themes/    token-based UI theme system
 ```
 
 ## Credits
 
-Fan-made, non-commercial. Pokémon © Nintendo / Creatures / GAME FREAK. Battle engine: Pokémon Showdown (MIT) via `@pkmn`. Sprites and cries are loaded at runtime from [PokeAPI](https://github.com/PokeAPI). Trainer sprites come from Pokémon Showdown. The music is original.
+Fan-made, non-commercial. Pokémon © Nintendo / Creatures / GAME FREAK. Battle engine: Pokémon Showdown (MIT) via `@pkmn`. Sprites and cries are loaded at runtime from [PokeAPI](https://github.com/PokeAPI). Trainer sprites come from Pokémon Showdown. Overworld maps and sprites are read at runtime from the [pret/pokeemerald](https://github.com/pret/pokeemerald) decompilation. The music is original.

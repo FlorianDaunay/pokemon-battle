@@ -117,6 +117,16 @@ export const EN = {
     apexTitle: "The Apex",
     shinyHint: "Something sparkles behind this door…",
   },
+  world: {
+    hint: "Tap to walk · arrow keys / WASD, Space to interact",
+    enter: "Enter",
+    back: "Back to the hall",
+    exit: "Way on",
+    stairsUp: "Stairs up",
+    stairsDown: "To camp",
+    loadError: "The map couldn't be loaded. Check your connection.",
+    retry: "Retry",
+  },
   battle: {
     fight: "Fight", bag: "Bag", pokemon: "Pokémon", run: "Run",
     wildAppeared: "A wild {name} appeared!",
@@ -480,6 +490,16 @@ export const FR: Shape<typeof EN> = {
     teamHealed: "Votre équipe a été entièrement soignée.",
     apexTitle: "L'Apex",
     shinyHint: "Quelque chose scintille derrière cette porte…",
+  },
+  world: {
+    hint: "Touchez pour marcher · flèches / ZQSD, Espace pour interagir",
+    enter: "Entrer",
+    back: "Retour au hall",
+    exit: "Suite",
+    stairsUp: "Escalier",
+    stairsDown: "Vers le camp",
+    loadError: "Impossible de charger la carte. Vérifiez votre connexion.",
+    retry: "Réessayer",
   },
   battle: {
     fight: "Attaque", bag: "Sac", pokemon: "Pokémon", run: "Fuite",
