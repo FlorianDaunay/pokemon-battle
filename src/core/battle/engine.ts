@@ -70,6 +70,8 @@ export interface PlayerRequest {
   trapped: boolean;
   /** Must Struggle (no PP / all disabled). */
   struggle: boolean;
+  /** Locked into a move (Outrage, recharge, second turn of a charge move): the turn plays itself. */
+  locked: boolean;
 }
 
 const slotName = (i: number) => `S${i}`;
@@ -223,11 +225,13 @@ export class BattleController {
     const side = this.battle.p1;
     const state = side.requestState;
     const switchable = side.pokemon.filter((m) => !m.isActive && !m.fainted && m.hp > 0).map((m) => BattleController.indexOf(m));
-    if (state === "switch") return { kind: "switch", moves: [], switchable, trapped: false, struggle: false };
-    if (state !== "move") return { kind: "wait", moves: [], switchable, trapped: false, struggle: false };
+    if (state === "switch") return { kind: "switch", moves: [], switchable, trapped: false, struggle: false, locked: false };
+    if (state !== "move") return { kind: "wait", moves: [], switchable, trapped: false, struggle: false, locked: false };
     const active = side.active[0];
     const data = active.getMoveRequestData();
     const moves: MoveOption[] = [];
+    // Showdown sends a locked move without PP.
+    const locked = data.moves.length === 1 && !("pp" in data.moves[0]) && data.moves[0].id !== "struggle";
     data.moves.forEach((m, i) => {
       if (m.id === BAG_ACTION) return;
       const anyM = m as { id: string; pp?: number; maxpp?: number; disabled?: boolean | string };
@@ -235,7 +239,7 @@ export class BattleController {
     });
     const struggle = moves.length === 1 && moves[0].id === "struggle";
     const trapped = !!(data.trapped || data.maybeTrapped);
-    return { kind: "move", moves, switchable: trapped ? [] : switchable, trapped, struggle };
+    return { kind: "move", moves, switchable: trapped ? [] : switchable, trapped, struggle, locked };
   }
 
   /** Lets the opponent answer any pending request (move, or replacement after a faint). */

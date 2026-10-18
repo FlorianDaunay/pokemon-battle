@@ -392,6 +392,10 @@ function BattleView({ room, floor, tr, foe, party, ctrl, theme }: Setup) {
     }
     const r = ctrl.request();
     setRequest(r);
+    if (r.kind === "move" && r.locked) {
+      void play(ctrl.chooseMove(r.moves[0]?.index ?? 1));
+      return;
+    }
     if (r.kind === "switch") {
       setText(translate(lang, "battle.forceSwitch"));
       setShown(999);

@@ -62,3 +62,24 @@ describe("BattleController", () => {
     expect(events.some((e) => e.t === "weather" && e.weather === "Sandstorm")).toBe(true);
   });
 });
+
+describe("locked moves", () => {
+  it("flags Outrage's second turn as locked and plays it", () => {
+    const rng = new Rng(3);
+    const player = [createPokemon({ species: "dragonite", level: 60, rng, moves: ["outrage", "hyperbeam"] })];
+    const foe = [createPokemon({ species: "snorlax", level: 70, rng, moves: ["rest"] })];
+    const ctrl = new BattleController({ kind: "wild", player, foe, ai: "wild", seed: 9, ball });
+    ctrl.drain();
+    ctrl.chooseMove(1);
+    const req = ctrl.request();
+    expect(req.locked).toBe(true);
+    const events = ctrl.chooseMove(req.moves[0].index);
+    expect(events.some((e) => e.t === "move" && e.side === "p1" && e.move === "Outrage")).toBe(true);
+  });
+
+  it("does not flag a normal turn", () => {
+    const { ctrl } = setup("wild");
+    ctrl.drain();
+    expect(ctrl.request().locked).toBe(false);
+  });
+});
