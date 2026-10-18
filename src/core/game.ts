@@ -1,11 +1,11 @@
-import { dex, eggMoves, itemEvolution, levelUpMoves, species, speciesMeta, teachableMoves, toID } from "./dex";
+import { dex, eggMoves, formesOf, itemEvolution, levelUpMoves, species, speciesMeta, teachableMoves, toID } from "./dex";
 import type { StatId } from "./dex";
 import { itemDef, sellPrice } from "./items";
 import { addExp, evoContext, evolve, expGain, healFully, maxHp, maxPp, setLevel } from "./pokemon";
 import type { LevelUpEvent, OwnedPokemon } from "./pokemon";
 import { Rng, randomSeed } from "./rng";
 import type { RunState, SaveData } from "./save";
-import { addItem, hasItem } from "./save";
+import { addItem, hasItem, registerCaught } from "./save";
 import { BASE_SHINY_RATE, STEPS_PER_FLOOR, generateFloor, newFloorSeed } from "./spire/floor";
 import type { Floor, Room } from "./spire/floor";
 import { LAST_MAIN_FLOOR } from "./spire/themes";
@@ -276,6 +276,28 @@ export function useItemOn(save: SaveData, itemId: string, p: OwnedPokemon, opts:
     }
   }
   return result;
+}
+
+// Rotom's appliances each come with their own move.
+const ROTOM_MOVES: Record<string, string> = { rotomheat: "overheat", rotomwash: "hydropump", rotomfrost: "blizzard", rotomfan: "airslash", rotommow: "leafstorm" };
+
+/** Switches a Pokémon to another of its formes (Rotom, Deoxys, Giratina, Shaymin, Kyurem…). */
+export function changeForme(save: SaveData, p: OwnedPokemon, forme: string): boolean {
+  if (forme === p.species || !formesOf(p.species).includes(forme)) return false;
+  const rotom = formesOf(p.species)[0] === "rotom";
+  const oldMove = ROTOM_MOVES[p.species] ?? (rotom ? "thundershock" : undefined);
+  const newMove = ROTOM_MOVES[forme] ?? (rotom ? "thundershock" : undefined);
+  evolve(p, forme);
+  if (newMove && !p.moves.some((m) => m.id === newMove)) {
+    // The appliance's move takes the old one's place (or the last slot when it wasn't known).
+    let slot = oldMove ? p.moves.findIndex((m) => m.id === oldMove) : -1;
+    if (slot < 0) slot = p.moves.length < 4 ? p.moves.length : 3;
+    const fresh = { id: newMove, pp: 0, ups: 0 };
+    fresh.pp = maxPp(fresh);
+    p.moves[slot] = fresh;
+  }
+  registerCaught(save, forme);
+  return true;
 }
 
 export function giveItem(save: SaveData, p: OwnedPokemon, itemId: string | undefined): boolean {

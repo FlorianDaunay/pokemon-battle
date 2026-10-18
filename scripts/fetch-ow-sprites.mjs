@@ -27,6 +27,7 @@ wanted.push(
   { id: "liza", candidates: ["Liza OD"] },
   { id: "nurse", candidates: ["Nurse OD", "Pokémon Center lady OD"] },
   { id: "clerk", candidates: ["Clerk m OD"] },
+  { id: "formchanger", candidates: ["Scientist m OD"] },
   { id: "professor", candidates: ["Juniper OD", "Professor Juniper OD", "Scientist f OD"] },
   { id: "hilbert", candidates: ["Hilbert OD"] }, { id: "hilda", candidates: ["Hilda OD"] },
   { id: "nate", candidates: ["Nate OD"] }, { id: "rosa", candidates: ["Rosa OD"] },

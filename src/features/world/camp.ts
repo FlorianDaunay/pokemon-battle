@@ -39,6 +39,7 @@ export const CAMP = {
   quests: { x: AVENUE.x - 1, y: 17 },
   trophies: { x: AVENUE.x + AVENUE.w, y: 17 },
   journal: { x: CAMP_MID + 1, y: 25 },
+  forms: { x: CAMP_MID - 1, y: 25 },
 };
 
 /** Repeats a piece over an area. */

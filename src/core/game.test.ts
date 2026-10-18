@@ -19,3 +19,22 @@ describe("climbing", () => {
     expect(save.run!.current).toBeNull();
   });
 });
+
+describe("formes", () => {
+  it("switches Rotom's appliance and its signature move", async () => {
+    const { changeForme } = await import("./game");
+    const { createPokemon } = await import("./pokemon");
+    const { Rng } = await import("./rng");
+    const save = newSave("Test", "rosa", "pikachu", 1);
+    const rotom = createPokemon({ species: "rotom", level: 40, rng: new Rng(2), moves: ["thundershock", "shadowball", "discharge", "thunderwave"] });
+    expect(changeForme(save, rotom, "rotomwash")).toBe(true);
+    expect(rotom.species).toBe("rotomwash");
+    expect(rotom.moves.map((m) => m.id)).toContain("hydropump");
+    expect(changeForme(save, rotom, "rotomheat")).toBe(true);
+    expect(rotom.moves.map((m) => m.id)).toContain("overheat");
+    expect(rotom.moves.map((m) => m.id)).not.toContain("hydropump");
+    expect(changeForme(save, rotom, "pikachu")).toBe(false);
+    expect(changeForme(save, rotom, "rotom")).toBe(true);
+    expect(rotom.moves.map((m) => m.id)).toContain("thundershock");
+  });
+});

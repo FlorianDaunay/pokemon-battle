@@ -7,6 +7,7 @@ import { TutorSheet } from "./lobby/TutorSheet";
 import { DojoSheet } from "./lobby/DojoSheet";
 import { DexSheet, JournalSheet, QuestsSheet, TrophiesSheet } from "./lobby/InfoSheets";
 import { SettingsSheet } from "./SettingsSheet";
+import { FormsSheet } from "./lobby/FormsSheet";
 
 export function Overlays() {
   const overlay = useGame((s) => s.overlay);
@@ -26,5 +27,6 @@ export function Overlays() {
     case "trophies": return <TrophiesSheet onClose={close} />;
     case "journal": return <JournalSheet onClose={close} />;
     case "dex": return <DexSheet onClose={close} />;
+    case "forms": return <FormsSheet onClose={close} />;
   }
 }

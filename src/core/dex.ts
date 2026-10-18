@@ -44,6 +44,13 @@ export const PLAYABLE_SPECIES: string[] = dex.species
   .filter((s) => s.num >= 1 && s.num <= 649 && !s.isNonstandard && (!s.forme || EXTRA_FORMES.has(s.id)) && !s.battleOnly)
   .map((s) => s.id);
 
+/** All formes a Pokémon can switch between (base first), or [] when it has only one. */
+export function formesOf(id: string): string[] {
+  const base = toID(species(id).baseSpecies);
+  const list = [base, ...[...EXTRA_FORMES].filter((f) => toID(species(f).baseSpecies) === base)];
+  return list.length > 1 ? list : [];
+}
+
 /** National Dex number used for sprites (formes have their own PokeAPI ids). */
 const FORME_SPRITE_IDS: Record<string, number> = {
   deoxysattack: 10001, deoxysdefense: 10002, deoxysspeed: 10003, rotomheat: 10008, rotomwash: 10009,

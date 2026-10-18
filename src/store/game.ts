@@ -6,7 +6,7 @@ import type { Room } from "@/core/spire/floor";
 import { writeSlot } from "./saves";
 
 export type Screen = "title" | "slots" | "newgame" | "lobby" | "spire" | "battle";
-export type Overlay = "party" | "bag" | "mart" | "pc" | "tutor" | "dojo" | "quests" | "trophies" | "journal" | "dex" | "settings" | null;
+export type Overlay = "party" | "bag" | "mart" | "pc" | "tutor" | "dojo" | "quests" | "trophies" | "journal" | "dex" | "forms" | "settings" | null;
 
 /** A choice the player must make after levelling up (learn a move, evolve). */
 export type Pending =

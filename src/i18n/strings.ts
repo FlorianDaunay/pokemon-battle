@@ -63,6 +63,7 @@ export const EN = {
     trophiesDesc: "Your achievements.",
     journal: "Journal",
     journalDesc: "Prof. Aurea's notes.",
+    forms: "Form Changer",
     team: "Team",
     bag: "Bag",
     dex: "Pokédex",
@@ -116,6 +117,13 @@ export const EN = {
     teamHealed: "Your team was fully healed.",
     apexTitle: "The Apex",
     shinyHint: "Something sparkles behind this door…",
+  },
+  forms: {
+    title: "Form Changer",
+    intro: "Rotom's appliances, Deoxys, Giratina, Shaymin, the Forces of Nature, Kyurem… Pick the form you want.",
+    none: "None of your Pokémon can change form yet.",
+    current: "Current",
+    changed: "{name} changed to its {forme} form!",
   },
   world: {
     hint: "Arrow keys / WASD to walk (or click), Space to interact",
@@ -437,6 +445,7 @@ export const FR: Shape<typeof EN> = {
     trophiesDesc: "Vos succès.",
     journal: "Journal",
     journalDesc: "Les notes du Prof. Aurea.",
+    forms: "Changement de forme",
     team: "Équipe",
     bag: "Sac",
     dex: "Pokédex",
@@ -490,6 +499,13 @@ export const FR: Shape<typeof EN> = {
     teamHealed: "Votre équipe a été entièrement soignée.",
     apexTitle: "L'Apex",
     shinyHint: "Quelque chose scintille derrière cette porte…",
+  },
+  forms: {
+    title: "Changement de forme",
+    intro: "Appareils de Motisma, Deoxys, Giratina, Shaymin, les Forces de la Nature, Kyurem… Choisissez la forme voulue.",
+    none: "Aucun de vos Pokémon ne peut encore changer de forme.",
+    current: "Actuelle",
+    changed: "{name} prend sa forme {forme} !",
   },
   world: {
     hint: "Flèches / ZQSD pour marcher (ou cliquez), Espace pour interagir",

@@ -69,6 +69,7 @@ export function LobbyScreen() {
       door("mart", CAMP.mart, t("lobby.mart")),
       door("quests", CAMP.quests, t("lobby.quests"), ready || undefined),
       door("trophies", CAMP.trophies, t("lobby.trophies")),
+      { id: "forms", ...CAMP.forms, onUse: station("forms"), render: (T) => <Person T={T} look={lookOf("formchanger")} label={t("lobby.forms")} /> },
       { id: "journal", ...CAMP.journal, onUse: station("journal"), render: (T) => <Person T={T} look={lookOf("professor")} label={t("lobby.journal")} /> },
     ];
   }, [t, ready, floors.length]); // eslint-disable-line react-hooks/exhaustive-deps
