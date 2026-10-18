@@ -186,8 +186,9 @@ export interface FoeTeam {
 }
 
 /**
- * The foes of a trainer room. Doubles get at least two Pokémon; in a tag battle each trainer
- * brings a smaller team of their own, and their leads come first (trainer left, partner right).
+ * The foes of a trainer room. Doubles get at least two Pokémon; in a tag battle the two
+ * trainers split a normal team between them, and their leads come first (trainer left,
+ * partner right).
  */
 export function buildRoomTeam(room: { trainer?: string; partner?: string; double?: boolean; kind: string; level: number; seed: number }, floor: number, shinyRate: number): FoeTeam {
   const boss = room.kind === "boss";
@@ -195,9 +196,10 @@ export function buildRoomTeam(room: { trainer?: string; partner?: string; double
     const size = room.double ? Math.max(2, teamSize(floor, boss)) : undefined;
     return { foe: buildTrainerTeam(room.trainer!, floor, room.level, boss, room.seed, shinyRate, size) };
   }
-  const size = Math.max(2, Math.ceil(teamSize(floor, boss) * 0.6));
-  const a = buildTrainerTeam(room.trainer!, floor, room.level, boss, room.seed, shinyRate, size);
-  const b = buildTrainerTeam(room.partner, floor, room.level, boss, room.seed ^ 0x7a9, shinyRate, size);
+  // The two share a normal team's worth: 3 + 3 for a team of six.
+  const total = Math.max(2, teamSize(floor, boss));
+  const a = buildTrainerTeam(room.trainer!, floor, room.level, boss, room.seed, shinyRate, Math.ceil(total / 2));
+  const b = buildTrainerTeam(room.partner, floor, room.level, boss, room.seed ^ 0x7a9, shinyRate, Math.floor(total / 2));
   const foe = [a[0], b[0], ...a.slice(1), ...b.slice(1)];
   const owners = [0, 1, ...a.slice(1).map(() => 0), ...b.slice(1).map(() => 1)];
   return { foe, owners };

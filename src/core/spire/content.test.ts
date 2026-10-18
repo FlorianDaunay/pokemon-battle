@@ -73,7 +73,9 @@ describe("content", () => {
     const { foe, owners } = buildRoomTeam({ kind: "trainer", trainer: "brock", partner: "misty", double: true, level: 30, seed: 5 }, 12, 0);
     expect(owners).toHaveLength(foe.length);
     expect(owners!.slice(0, 2)).toEqual([0, 1]);
-    expect(owners!.filter((o) => o === 0).length).toBeGreaterThanOrEqual(2);
-    expect(owners!.filter((o) => o === 1).length).toBeGreaterThanOrEqual(2);
+    // Floor 12 teams have six Pokémon: three each.
+    expect(foe).toHaveLength(6);
+    expect(owners!.filter((o) => o === 0)).toHaveLength(3);
+    expect(owners!.filter((o) => o === 1)).toHaveLength(3);
   });
 });
